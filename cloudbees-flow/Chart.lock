@@ -1,0 +1,27 @@
+dependencies:
+- name: mariadb
+  repository: ""
+  version: 7.0.1
+- name: zookeeper
+  repository: ""
+  version: 2.1.1
+- name: nginx-ingress
+  repository: https://charts.helm.sh/stable
+  version: 1.25.0
+- name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+- name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+- name: cloudbees-sidecar-injector
+  repository: https://charts.cloudbees.com/public/cloudbees
+  version: 2.2.1
+- name: ingress-nginx
+  repository: https://kubernetes.github.io/ingress-nginx
+  version: 4.0.13
+- name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+digest: sha256:0907e48375822ffb08efa54836934cae4b28443c3a5edc36428f941deba816f9
+generated: "2023-12-15T11:52:37.865567634Z"

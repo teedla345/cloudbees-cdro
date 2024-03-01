@@ -1,0 +1,222 @@
+{{- if .Values.dois.backup.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{.Release.Name}}-dois-restore-scripts"
+  labels:
+    app: cloudbees-flow
+    chart: cloudbees-flow
+data:
+  restore.py: |
+
+      import requests
+      import json
+      import os
+
+
+      def _create_snapshot_repo(es_host_url):
+          url = "%s/_snapshot/es_snap" % (es_host_url)
+          try:
+              repo_type = os.getenv("CBF_DOIS_BACKUP_REPO_TYPE", "fs")
+              settings = {"location": os.getenv("CBF_DOIS_PATH_REPO", "/es-backups"), "compress": "true"}
+              if repo_type == "s3" or repo_type == "gcs":
+                  bucket = os.getenv("CBF_DOIS_BACKUP_BUCKET")
+                  region = os.getenv("CBF_DOIS_BACKUP_REGION")
+                  settings = {"bucket": bucket, "region": region}
+      
+              payload = {
+                  "type": repo_type,
+                  "settings": settings
+              }
+    
+              headers = {
+                  'content-type': "application/json",
+                  'cache-control': "no-cache"
+              }
+              response = requests.request("PUT", url, data=json.dumps(payload), headers=headers, verify=False)
+              response_json = json.loads(response.text)
+              print(response_json)
+          except Exception:
+              print("Repo Already Exist")
+
+
+      def _get_all_indices(es_host_url):
+          print("Get All Indices ")
+          url = "%s/_mapping" % es_host_url
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("GET", url, headers=headers, verify=False)
+          response_json = json.loads(response.text)
+          return response_json.keys()
+
+
+      def _close_indices(es_host_url, indices):
+          print("Closing Indices %s  " % indices)
+
+          url = "%s/%s/_close" % (es_host_url, indices)
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("POST", url, headers=headers, verify=False)
+          if response.status_code == 200:
+              print("Closed Indices %s  " % indices)
+          else:
+              raise Exception("Failed to Close Indices %s. Status Received %s" % (indices, str(response.text)))
+
+
+      def _get_provided_snapshot(es_host_url, snapshot_provided_by_user):
+          print("Get Provided Snapshot")
+
+          url = "%s/_snapshot/es_snap/%s" % (es_host_url, snapshot_provided_by_user)
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("GET", url, headers=headers, verify=False)
+          response_json = json.loads(response.text)
+          recent_snapshot = None
+          snapshot_indices = []
+
+          if response_json and 'snapshots' in response_json:
+              for snapshot in response_json['snapshots']:
+                  if snapshot['state'] == "SUCCESS":
+                      recent_snapshot = snapshot['snapshot']
+                      snapshot_indices = snapshot['indices']
+          return recent_snapshot, snapshot_indices
+
+
+      def _get_latest_snapshot(es_host_url):
+          print("Get Latest Snapshot")
+
+          url = "%s/_snapshot/es_snap/_all" % (es_host_url)
+          payload = {
+          }
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("GET", url, headers=headers, verify=False)
+          response_json = json.loads(response.text)
+
+          et_ms = 0
+          recent_snapshot = None
+          snapshot_indices = []
+          if response_json and 'snapshots' in response_json:
+              for snapshot in response_json['snapshots']:
+                  if snapshot['state'] == "SUCCESS" and int(snapshot['end_time_in_millis']) > et_ms:
+                      recent_snapshot = snapshot['snapshot']
+                      et_ms = int(snapshot['end_time_in_millis'])
+                      snapshot_indices = snapshot['indices']
+
+          return recent_snapshot, snapshot_indices
+
+
+      def _restore_snapshot(es_host_url, indices, snapshot_name):
+          print("Restoring indices %s using snapshot" % indices, snapshot_name)
+
+          url = "%s/_snapshot/es_snap/%s/_restore" % (es_host_url, snapshot_name)
+          payload = {
+              "indices": indices,
+              "ignore_unavailable": "true",
+              "include_global_state": "false",
+              "include_aliases": "false",
+              "partial": "false",
+              "ignore_index_settings": [
+                  "index.refresh_interval"
+              ]
+          }
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("POST", url, data=json.dumps(payload), headers=headers, verify=False)
+          if response.status_code == 200:
+              print("Restored Indices %s  " % indices)
+          else:
+              raise Exception("Failed to Restore Snapshot. Status Received %s" % str(response.text))
+
+
+      def main():
+          es_host_url = "https://%s:%s@%s:%s" % (
+          "admin", os.getenv('CBF_DOIS_ADMIN_PASSWORD'), os.getenv('CBF_DOIS_HOST'), "9200")
+          indices_list = _get_all_indices(es_host_url)
+          _create_snapshot_repo(es_host_url)
+          snapshot_provided_by_user = os.getenv("CBF_DOIS_SNAPSHOT_NAME", None)
+          if snapshot_provided_by_user:
+              snapshot_name, snapshot_indices = _get_provided_snapshot(es_host_url, snapshot_provided_by_user)
+          else:
+              snapshot_name, snapshot_indices = _get_latest_snapshot(es_host_url)
+          print(snapshot_name)
+          print("Indices present to restore %s" % snapshot_indices)
+          if snapshot_name and snapshot_indices:
+              for indices in snapshot_indices:
+                  if indices != "searchguard" and not indices.startswith("."):
+                      try:
+                          if indices in indices_list:
+                              _close_indices(es_host_url, indices)
+                          _restore_snapshot(es_host_url, indices, snapshot_name)
+                      except Exception as e:
+                          print("Failed to restore Indices %s with error %s", (indices, e))
+
+
+      if __name__ == '__main__':
+          main()
+
+  cleanup.py: |
+
+      import requests
+      import json
+      import os
+      from datetime import datetime, timedelta
+
+
+      def _delete_snapshot(es_host_url, snapshot):
+          print("Deleting Snapshots %s  " % snapshot)
+
+          url = "%s/_snapshot/es_snap/%s" % (es_host_url, snapshot)
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("DELETE", url, headers=headers, verify=False)
+          if response.status_code == 200:
+              print("Deleted Snapshots %s  " % snapshot)
+          else:
+              raise Exception("Failed to Deleted Snapshot %s. Status Received %s" % (snapshot, str(response.text)))
+
+
+      def _delete_older_snapshots(es_host_url):
+          print("Delete Older Snapshots")
+          retention_days = os.getenv('CBF_DOIS_BACKUP_RET_DAYS', 15)
+          url = "%s/_snapshot/es_snap/_all" % (es_host_url)
+          headers = {
+              'content-type': "application/json",
+              'cache-control': "no-cache"
+          }
+          response = requests.request("GET", url, headers=headers, verify=False)
+          response_json = json.loads(response.text)
+          now = datetime.now()
+          ret_last_date = now - timedelta(days=int(retention_days))
+          epoch = datetime.utcfromtimestamp(0)
+          retention_time_in_ms = int((ret_last_date - epoch).total_seconds() * 1000)
+          if response_json and 'snapshots' in response_json:
+              for snapshot in response_json['snapshots']:
+                  start_time = int(snapshot['start_time_in_millis'])
+                  if start_time < retention_time_in_ms:
+                      _delete_snapshot(es_host_url, snapshot['snapshot'])
+
+
+      def main():
+          es_host_url = "https://%s:%s@%s:%s" % (
+          "admin", os.getenv('CBF_DOIS_ADMIN_PASSWORD'), os.getenv('CBF_DOIS_HOST'), "9200")
+          _delete_older_snapshots(es_host_url)
+
+
+      if __name__ == '__main__':
+          main()
+
+
+{{- end }}

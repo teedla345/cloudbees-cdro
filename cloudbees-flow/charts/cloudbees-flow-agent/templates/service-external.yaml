@@ -1,0 +1,26 @@
+{{- if .Values.externalService.enabled -}}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agents-external"
+  labels:
+    app: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent-service"
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- if .Values.externalService.annotations }}
+  annotations:
+{{ toYaml .Values.externalService.annotations | indent 4 }}
+{{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: p2
+      port: {{ .Values.externalService.port }}
+      protocol: TCP
+      targetPort: p4-agent
+  selector:
+    app: "{{  .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+    release: {{ .Release.Name }}
+{{ end }}

@@ -1,0 +1,82 @@
+suite: CD Ingress Tests
+templates:
+  - ingress.yaml
+tests:
+
+  - it: by default ingress-nginx has affinity-mode `persistent`
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/affinity-mode"]
+          value: "persistent"
+
+  - it: by default -> no certificate, no secret, no tls section
+    asserts:
+      - hasDocuments: { count: 0 }
+        template: ingress-secrets.yaml
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Ingress }
+      - isNull:
+          path: spec.tls
+
+  - it: +host +existingSecret -> +tls section, +certificate, no secret
+    set:
+      ingress.host: testhost
+      ingress.certificate.existingSecret: testsecret
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Ingress }
+      - hasDocuments: { count: 0 }
+        template: ingress-secrets.yaml
+      - contains:
+          path: spec.tls[0].hosts
+          content: testhost
+      - equal:
+          path: spec.tls[0].secretName
+          value: testsecret
+
+  - it: +host +crt -> +tls section, no certificate, no secret
+    set:
+      ingress.host: testhost
+      ingress.certificate.crt: foooo
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Ingress }
+      - hasDocuments: { count: 0 }
+        template: ingress-secrets.yaml
+      - contains:
+          path: spec.tls[0].hosts
+          content: testhost
+      - isNull:
+          path: spec.tls[0].secretName
+
+  - it: +host +crt +key -> +tls section, +certificate, +secret
+    set:
+      ingress.host: testhost
+      ingress.certificate.crt: foo
+      ingress.certificate.key: bar
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Ingress }
+      - hasDocuments: { count: 1 }
+        template: ingress-secrets.yaml
+      - isKind: { of: Secret }
+        template: ingress-secrets.yaml
+      - contains:
+          path: spec.tls[0].hosts
+          content: testhost
+      - equal:
+          path: spec.tls[0].secretName
+          value: flow-tls-secret
+      - equal:
+          path: data["tls.crt"]
+          # base64(foo)
+          value: Zm9v
+        template: ingress-secrets.yaml
+      - equal:
+          path: data["tls.key"]
+          # base64(bar)
+          value: YmFy
+        template: ingress-secrets.yaml
+

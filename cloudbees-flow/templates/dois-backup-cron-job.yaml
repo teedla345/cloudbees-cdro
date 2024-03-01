@@ -1,0 +1,131 @@
+{{- if and  .Values.dois.enabled .Values.dois.backup.enabled -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: flow-devopsinsight-es-backup-job
+  labels:
+    app: flow-devopsinsight
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- toYaml .Values.customLabels | nindent 4 }}
+
+spec:
+  schedule: {{ .Values.dois.backup.schedule_cron | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+{{- if eq .Values.securityContext.enabled true }}
+          securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 12 }}
+{{- end }}
+          serviceAccountName: {{ include "cloudbees-flow.serviceAccountName" . }}
+          restartPolicy: Never
+          containers:
+          - name: dois-es-backup
+{{ if .Values.global.cloudbees.imageRegistry }}
+            image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.dois.backup.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+            image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.dois.backup.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+            env:
+            - name: CBF_DOIS_HOST
+              value: {{ tpl .Values.dois.serviceEndpoint . | quote }}
+            - name: CBF_DOIS_PATH_REPO
+              value: {{ .Values.dois.backup.location  | quote }}
+            - name: CBF_DOIS_BACKUP_RET_DAYS
+              value: {{ .Values.dois.backup.retentionDays  | quote }}
+    {{- if .Values.dois.backup.externalRepo.enabled }}
+            - name: CBF_DOIS_BACKUP_REPO_TYPE
+              value: {{ .Values.dois.backup.externalRepo.type | quote }}
+            - name: CBF_DOIS_BACKUP_BUCKET
+              value: {{ .Values.dois.backup.externalRepo.bucketName | quote }}
+            - name: CBF_DOIS_BACKUP_REGION
+              value: {{ .Values.dois.backup.externalRepo.region | quote }}
+    {{- end }}
+    {{- if .Values.dois.credentials.existingSecret }}
+            - name: CBF_DOIS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dois.credentials.existingSecret }}
+                  key: CBF_DOIS_ADMIN_PASSWORD
+    {{- else }}
+            - name: CBF_DOIS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "cloudbees-flow.fullname" . }}-dois
+                  key: CBF_DOIS_ADMIN_PASSWORD
+    {{- end }}
+            command:
+            - sh
+            - -c
+            - |
+              set -e
+              set -x
+              SNAP_NAME="dois-backup-daily-$(date +%d-%m-%Y-%H-%M)"
+
+              if [ -z $CBF_DOIS_BACKUP_REPO_TYPE ] ; then curl -XPUT -u admin:$CBF_DOIS_ADMIN_PASSWORD --insecure --header "Content-Type: application/json" "https://$CBF_DOIS_HOST:9200/_snapshot/es_snap" -d '{"type":"fs","settings":{"location":"/'"$CBF_DOIS_PATH_REPO"'","compress":true}}' ; fi
+              if [ $CBF_DOIS_BACKUP_REPO_TYPE == "s3" ] ; then curl -XPUT -u admin:$CBF_DOIS_ADMIN_PASSWORD --insecure --header "Content-Type: application/json" "https://$CBF_DOIS_HOST:9200/_snapshot/es_snap" -d '{"type":"s3","settings":{"bucket":"'"$CBF_DOIS_BACKUP_BUCKET"'","region":"'"$CBF_DOIS_BACKUP_REGION"'"}}' ; fi
+              if [ $CBF_DOIS_BACKUP_REPO_TYPE == "gcs" ] ; then curl -XPUT -u admin:$CBF_DOIS_ADMIN_PASSWORD --insecure --header "Content-Type: application/json" "https://$CBF_DOIS_HOST:9200/_snapshot/es_snap" -d '{"type":"gcs","settings":{"bucket":"'"$CBF_DOIS_BACKUP_BUCKET"'","region":"'"$CBF_DOIS_BACKUP_REGION"'"}}' ; fi
+              curl -XPUT -u admin:$CBF_DOIS_ADMIN_PASSWORD --insecure --header "Content-Type: application/json" "https://$CBF_DOIS_HOST:9200/_snapshot/es_snap/$SNAP_NAME?wait_for_completion=true"
+            resources:
+              limits:
+                cpu: "25m"
+                memory: "128Mi"
+              requests:
+                cpu: "25m"
+                memory: "128Mi"
+
+          - name: dois-cleanup-snapshots
+            image: {{ .Values.dois.backup.cleanupImageRepository }}:{{ .Values.dois.backup.cleanupImageTag }}
+            imagePullPolicy: {{ .Values.images.pullPolicy }}
+            env:
+            - name: CBF_DOIS_HOST
+              value: {{ tpl .Values.dois.serviceEndpoint . | quote }}
+            - name: CBF_DOIS_BACKUP_RET_DAYS
+              value: {{ .Values.dois.backup.retentionDays  | quote }}
+    {{- if .Values.dois.credentials.existingSecret }}
+            - name: CBF_DOIS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dois.credentials.existingSecret }}
+                  key: CBF_DOIS_ADMIN_PASSWORD
+    {{- else }}
+            - name: CBF_DOIS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "cloudbees-flow.fullname" . }}-dois
+                  key: CBF_DOIS_ADMIN_PASSWORD
+    {{- end }}
+            command:
+            - sh
+            - -c
+            - |
+              set -e
+              set -x
+              pip install requests==2.26.0
+              python /cleanup-scripts/cleanup.py
+            {{- if eq .Values.securityContext.enabled true }}
+            securityContext:
+            {{ toYaml .Values.containerSecurityContext | nindent 15 }}
+            {{- end }}
+            resources:
+              limits:
+                cpu: "25m"
+                memory: "128Mi"
+              requests:
+                cpu: "25m"
+                memory: "128Mi"
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+            - name: cleanup-scripts
+              mountPath: /cleanup-scripts/cleanup.py
+              subPath: cleanup.py
+          volumes:
+          - name: cleanup-scripts
+            configMap:
+              name: "{{.Release.Name}}-dois-restore-scripts"
+
+{{- end }}

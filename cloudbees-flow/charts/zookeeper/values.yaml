@@ -1,0 +1,360 @@
+## As weighted quorums are not supported, an odd number of replicas must
+## be specified. The number of replicas must be either 1, 3, 5, 7, etc.
+## ref: https://github.com/kubernetes/contrib/tree/master/statefulsets/zookeeper#stateful-set
+## Desired quantity of ZooKeeper pods. Must always be odd (1,3,5, 7, etc).
+replicaCount: 3
+
+podDisruptionBudget:
+  ## Limits the number of unavailable Zookeeper pods due to voluntary disruptions.
+  maxUnavailable: 1
+## Duration in seconds a Zookeeper pod needs to terminate gracefully.
+terminationGracePeriodSeconds: 1800
+
+updateStrategy:
+  type: RollingUpdate
+
+## Refs:
+## - https://github.com/kubernetes/contrib/tree/master/statefulsets/zookeeper
+## - https://github.com/kubernetes/contrib/blob/master/statefulsets/zookeeper/Makefile#L1
+image:
+  ## ZooKeeper image repository.
+  repository: zookeeper
+  ## ZooKeeper image tag.
+  tag: 3.5.5
+  ## ZooKeeper image pull policy.
+  pullPolicy: IfNotPresent
+
+  ## Enable this option when using a private registry.
+  ## Secrets must be manually created in the namespace.
+  ## Example:   - name: myRegistryKeySecretName
+  imagePullSecrets: []
+
+## Kubernetes Liveness Probes:
+livenessProbe:
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 2
+  successThreshold: 1
+
+## Kubernetes Readiness Probes:
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+service:
+  ## Exposes ZooKeeper on a cluster-internal IP.
+  type: ClusterIP
+  ## Arbitrary non-identifying metadata for ZooKeeper service.
+  ## AWS example for use with LoadBalancer service type:
+  ## external-dns.alpha.kubernetes.io/hostname: zookeeper.cluster.local
+  ## service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+  ## service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+  annotations: {}
+  ports:
+    client:
+      ## Service port number for client port.
+      port: 2181
+      ## Service target port for client port.
+      targetPort: client
+      ## Service port protocol for client port.
+      protocol: TCP
+
+## Headless service configuration.
+headless:
+  annotations: {}
+
+ports:
+  client:
+    ## ZooKeeper client container port.
+    containerPort: 2181
+    ## Protocol for ZooKeeper client container port.
+    protocol: TCP
+  election:
+    ## ZooKeeper election container port.
+    containerPort: 3888
+    ## Protocol for ZooKeeper election container port.
+    protocol: TCP
+  server:
+    ## ZooKeeper server container port.
+    containerPort: 2888
+    ## Protocol for ZooKeeper server container port.
+    protocol: TCP
+
+## (Optional) Specify how much CPU and memory (RAM) each ZooKeeper container needs.
+## To specify resources, uncomment the following lines, adjust them as necessary,
+## and remove the curly braces after 'resources:'.
+resources: {}
+  # limits:
+  #  cpu: 100m
+  #  memory: 128Mi
+  # requests:
+  #  cpu: 100m
+  #  memory: 128Mi
+
+priorityClassName: ""
+
+## Node label-values required to run ZooKeeper pods.
+nodeSelector: {}
+
+## Node taint overrides for ZooKeeper pods.
+tolerations: []
+
+## Criteria pod label-values influence scheduling for ZooKeeper pods.
+affinity: {}
+## Example structure:
+  # podAntiAffinity:
+  #   requiredDuringSchedulingIgnoredDuringExecution:
+  #     - topologyKey: "kubernetes.io/hostname"
+  #       labelSelector:
+  #         matchLabels:
+  #           release: zookeeper
+
+## Arbitrary non-identifying metadata for ZooKeeper pods.
+## Examples:
+## * prometheus.io/scrape: "true"
+## * prometheus.io/path: "/metrics"
+## * prometheus.io/port: "9141"
+podAnnotations: {}
+
+
+## Key/value pairs that are attached to ZooKeeper pods.
+## Examples:
+## * team: "developers"
+## * service: "zookeeper"
+podLabels: {}
+
+### --------------------------------------------
+### Pods security context
+### ---------------------------------------------
+## Requires `securityContext.enabled=true` to apply `securityContext` settings for pod spec.
+## Ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+securityContext:
+  enabled: true
+  fsGroup: 1000
+  runAsUser: 1000
+## Configure pod security context, which is applied to pod spec.
+## Ref: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core
+#  fsGroup: 1000
+#  fsGroupChangePolicy: OnRootMismatch
+#  runAsGroup: 1000
+#  runAsNonRoot: true
+#  runAsUser: 1000
+#  seLinuxOptions: {}
+#  seccompProfile: {}
+#  supplementalGroups:
+#  sysctls:
+
+## Requires `securityContext.enabled=true` to apply `containerSecurityContext` settings for containers.
+containerSecurityContext: {}
+## Configure container security context, which is applied to containers.
+## Ref: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core
+#  allowPrivilegeEscalation: false
+#  capabilities:
+#    drop: [ "ALL" ]
+#  privileged: false
+#  procMount: "Default"
+#  readOnlyRootFilesystem: true
+#  runAsGroup: 1000
+#  runAsNonRoot: true
+#  runAsUser: 1000
+#  seLinuxOptions: {}
+#  seccompProfile: {}
+
+## Used if you want to use an alternate image.
+command:
+  - /bin/bash
+  - -xec
+  - /config-scripts/run
+
+## Used if utilizing any custom authorizer.
+## Pass any secrets to the kafka pods. Each secret is by default passed as an
+## environment variable. If required, the secret can also be mounted to a
+## specific path (in addition to environment variable). Environment
+## variable names are generated as: `<secretName>_<secretKey>` (All upper-case)
+# secrets:
+# - name: myKafkaSecret
+#   keys:
+#     - username
+#     - password
+#   # mountPath: /opt/kafka/secret
+# - name: myZkSecret
+#   keys:
+#     - user
+#     - pass
+#   mountPath: /opt/zookeeper/secret
+
+persistence:
+  enabled: true
+  ## ZooKeeper data Persistent Volume Storage Class:
+  ## If defined, use `storageClassName: <storageClass>`
+  ## If set to "-", storageClassName: "" is passed and, dynamic provisioning is disabled.
+  ## If undefined (default) or set to null, no storageClassName spec is
+  ## set, and the default provisioner is used (gp2 on AWS, standard on
+  ## GKE, AWS, and OpenStack).
+  ##
+  # storageClass: "-"
+  accessMode: ReadWriteOnce
+  size: 5Gi
+
+## Exporters query apps for metrics and make those metrics available for
+## Prometheus to scrape.
+exporters:
+
+  jmx:
+    enabled: false
+    image:
+      repository: sscaling/jmx-prometheus-exporter
+      tag: 0.3.0
+      pullPolicy: IfNotPresent
+    config:
+      lowercaseOutputName: false
+      ## Ref: https://github.com/prometheus/jmx_exporter/blob/master/example_configs/zookeeper.yaml
+      rules:
+        - pattern: "org.apache.ZooKeeperService<name0=ReplicatedServer_id(\\d+)><>(\\w+)"
+          name: "zookeeper_$2"
+        - pattern: "org.apache.ZooKeeperService<name0=ReplicatedServer_id(\\d+), name1=replica.(\\d+)><>(\\w+)"
+          name: "zookeeper_$3"
+          labels:
+            replicaId: "$2"
+        - pattern: "org.apache.ZooKeeperService<name0=ReplicatedServer_id(\\d+), name1=replica.(\\d+), name2=(\\w+)><>(\\w+)"
+          name: "zookeeper_$4"
+          labels:
+            replicaId: "$2"
+            memberType: "$3"
+        - pattern: "org.apache.ZooKeeperService<name0=ReplicatedServer_id(\\d+), name1=replica.(\\d+), name2=(\\w+), name3=(\\w+)><>(\\w+)"
+          name: "zookeeper_$4_$5"
+          labels:
+            replicaId: "$2"
+            memberType: "$3"
+      startDelaySeconds: 30
+    env: {}
+    resources: {}
+    path: /metrics
+    ports:
+      jmxxp:
+        containerPort: 9404
+        protocol: TCP
+    livenessProbe:
+      httpGet:
+        path: /metrics
+        port: jmxxp
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 60
+      failureThreshold: 8
+      successThreshold: 1
+    readinessProbe:
+      httpGet:
+        path: /metrics
+        port: jmxxp
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 60
+      failureThreshold: 8
+      successThreshold: 1
+    serviceMonitor:
+      interval: 30s
+      scrapeTimeout: 30s
+      scheme: http
+
+  zookeeper:
+    ## Refs:
+    ## - https://github.com/carlpett/zookeeper_exporter
+    ## - https://hub.docker.com/r/josdotso/zookeeper-exporter/
+    ## - https://www.datadoghq.com/blog/monitoring-kafka-performance-metrics/#zookeeper-metrics
+    enabled: false
+    image:
+      repository: josdotso/zookeeper-exporter
+      tag: v1.1.2
+      pullPolicy: IfNotPresent
+    config:
+      logLevel: info
+      resetOnScrape: "true"
+    env: {}
+    resources: {}
+    path: /metrics
+    ports:
+      zookeeperxp:
+        containerPort: 9141
+        protocol: TCP
+    livenessProbe:
+      httpGet:
+        path: /metrics
+        port: zookeeperxp
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 60
+      failureThreshold: 8
+      successThreshold: 1
+    readinessProbe:
+      httpGet:
+        path: /metrics
+        port: zookeeperxp
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 60
+      failureThreshold: 8
+      successThreshold: 1
+    serviceMonitor:
+      interval: 30s
+      scrapeTimeout: 30s
+      scheme: http
+
+## ServiceMonitor configuration for using Prometheus Operator.
+prometheus:
+  serviceMonitor:
+    ## If `serviceMonitor.enabled: true`, a ServiceMonitor is installed for each enabled exporter.
+    enabled: false
+     ## The namespace where the ServiceMonitor(s) are installed.
+#    namespace: monitoring
+    ## The selector the Prometheus instance searches for.
+    ## [Default Prometheus Operator selector] (https://github.com/helm/charts/blob/f5a751f174263971fafd21eee4e35416d6612a3d/stable/prometheus-operator/templates/prometheus/prometheus.yaml#L74)
+    selector: {}
+
+## If you plan to use an alternate scheduler, e.g. "stork", provide the `schedulerName`.
+## ref: https://kubernetes.io/docs/tasks/administer-cluster/configure-multiple-schedulers/
+#  schedulerName:
+
+## ref: https://github.com/kubernetes/contrib/tree/master/statefulsets/zookeeper
+env:
+
+  ## Options related to JMX exporter.
+  ## ref: https://github.com/apache/zookeeper/blob/master/bin/zkServer.sh#L36
+  JMXAUTH: "false"
+  JMXDISABLE: "false"
+  JMXPORT: 1099
+  JMXSSL: "false"
+  ## The port the server accepts client requests on.
+  ZOO_PORT: 2181
+  ## The number of Ticks that an ensemble member is allowed to perform leader
+  ## election.
+  ZOO_INIT_LIMIT: 5
+  ZOO_TICK_TIME: 2000
+  ## The maximum number of concurrent client connections that
+  ## a server in the ensemble will accept.
+  ZOO_MAX_CLIENT_CNXNS: 60
+  ## The number of Ticks by which a follower may lag behind the ensemble leader.
+  ZOO_SYNC_LIMIT: 10
+  ZOO_AUTOPURGE_PURGEINTERVAL: 0
+  ZOO_AUTOPURGE_SNAPRETAINCOUNT: 3
+  ZOO_STANDALONE_ENABLED: false
+
+jobs:
+  ## Ref: http://zookeeper.apache.org/doc/r3.4.10/zookeeperProgrammers.html#ch_zkSessions
+  chroots:
+    enabled: false
+    activeDeadlineSeconds: 300
+    backoffLimit: 5
+    completions: 1
+    config:
+      create: []
+#         - /kafka
+#         - /ureplicator
+    env: []
+    parallelism: 1
+    resources: {}
+    restartPolicy: Never

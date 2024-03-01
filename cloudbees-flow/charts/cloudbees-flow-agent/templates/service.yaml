@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+{{- if .Values.service.name }}
+  name: "{{ .Values.service.name }}"
+{{- else }}
+  name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agents"
+{{- end }}
+  labels:
+    app: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent-service"
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: {{ .Values.service.type }}
+  clusterIP: {{ .Values.service.clusterIP }}
+  ports:
+    - name: p2
+      port: 7800
+      protocol: TCP
+      targetPort: p4-agent
+  selector:
+    app: "{{  .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+    release: {{ .Release.Name }}

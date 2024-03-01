@@ -1,0 +1,189 @@
+{{- if .Values.web.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flow-web
+  labels:
+    app: flow-web
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{ toYaml .Values.customLabels | nindent 4 }}
+
+spec:
+  strategy:
+    type: Recreate
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      app: flow-web
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: flow-web
+        release: {{ .Release.Name }}
+{{ toYaml .Values.customLabels | nindent 8 }}
+    spec:
+{{- if (and (not .Values.web.affinity) ( .Values.clusteredMode )) }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - flow-server
+              weight: 100
+            - podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - flow-web
+              weight: 10
+{{- end }}
+{{- if not .Values.clusteredMode }}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: flow-server
+{{- end }}
+{{- if .Values.clusteredMode }}
+{{- with .Values.web.affinity }}
+      affinity:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- end }}
+{{- with  .Values.web.tolerations }}
+      tolerations:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- if .Values.web.nodeSelector }}
+      nodeSelector:
+            {{ toYaml .Values.web.nodeSelector | nindent 8 }}
+{{ else }}
+      nodeSelector:
+        {{ include "os.label" . }}: linux
+{{- end }}
+      serviceAccountName: {{ template "cloudbees-flow.serviceAccountName" . }}
+{{- if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{- end }}
+{{- if and .Values.volumePermissions.enabled .Values.server.volumesPermissionsInitContainer.enabled }}
+{{- if and .Values.web.additionalVolumes .Values.web.additionalVolumeMounts }}
+{{- include  "validate.additionalVolumes-and-additionalVolumeMounts" .Values.web }}
+      initContainers:
+      - name: volumes-permissions
+{{ if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.web.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.web.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+        imagePullPolicy: {{ $.Values.images.pullPolicy }}
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+{{- toYaml .Values.web.additionalVolumeMounts | nindent 10 }}
+        command:
+          - sh
+          - -c
+          - |
+            set -e
+            set -x
+{{- range $key, $value := .Values.web.additionalVolumeMounts }}
+            chown -R {{ $.Values.securityContext.runAsUser }}:{{ $.Values.securityContext.fsGroup }} {{ $value.mountPath }} | true
+{{- end }}
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "128Mi"
+          requests:
+            cpu: "25m"
+            memory: "128Mi"
+{{- end }}
+{{- end }}
+      containers:
+        - name: flow-web
+{{ if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.web.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.web.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+          - name: CBF_WEB_HOST
+            value: flow-web
+          - name: CBF_SERVER_HOST
+            value: {{ required ".serverName is required for Flow web server deployment" .Values.serverName | quote }}
+          - name: CBF_LOCAL_RESOURCE_HOST
+            value: cb-flow-bound-agent
+          - name: CBF_WEB_NO_HTTPS_REDIRECT
+            value: "1"
+{{- if .Values.web.ecconfigure }}
+          - name: CBF_CONFIGURE
+            value: {{ .Values.web.ecconfigure }}
+{{- end }}
+{{- if .Values.web.extraEnvs }}
+{{ toYaml .Values.web.extraEnvs | indent 10 }}
+{{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: 2080
+            initialDelaySeconds: {{ .Values.web.readinessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.web.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.web.readinessProbe.timeoutSeconds | default 10 }}
+            failureThreshold: {{ .Values.web.readinessProbe.failureThreshold | default 3 }}
+
+          livenessProbe:
+            exec:
+              command: ["/opt/cbflow/health-check"]
+            initialDelaySeconds: {{ .Values.web.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.web.livenessProbe.periodSeconds | default 60 }}
+            timeoutSeconds: {{ .Values.web.livenessProbe.timeoutSeconds | default 10 }}
+            failureThreshold: {{ .Values.web.livenessProbe.failureThreshold | default 3 }}
+
+{{- if eq .Values.securityContext.enabled true }}
+          securityContext:
+            {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}
+          resources:
+{{ toYaml .Values.web.resources | indent 12 }}
+          ports:
+          - name: http
+            containerPort: 2080
+            protocol: TCP
+          - name: https
+            containerPort: 2443
+            protocol: TCP
+          volumeMounts:
+          - name: plugins-volume
+            mountPath: "/plugins-data"
+{{- if .Values.web.additionalVolumeMounts }}
+{{- toYaml .Values.web.additionalVolumeMounts | nindent 10 }}
+{{- end }}
+{{- if .Values.web.additionalContainers }}
+{{ toYaml .Values.web.additionalContainers | indent 8 }}
+{{- end }}
+      volumes:
+{{- if .Values.web.sharedPluginsEnabled }}
+      - name: plugins-volume
+        persistentVolumeClaim:
+          claimName: "{{ .Values.storage.volumes.serverPlugins.name }}"
+{{- else }}
+      - name: plugins-volume
+        emptyDir: {}
+{{- end }}
+{{- if .Values.web.additionalVolumes }}
+{{- toYaml .Values.web.additionalVolumes | nindent 6}}
+{{- end }}
+{{- end }}

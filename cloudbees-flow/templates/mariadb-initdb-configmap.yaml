@@ -1,0 +1,16 @@
+{{- if and .Values.mariadb.enabled (not .Values.mariadb.initdbScripts) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mariadb-initdb-scripts
+  labels:
+    app: {{ .Chart.Name }}
+    chart: {{ .Chart.Name }}
+data:
+    demo-db.sql: |-
+        CREATE DATABASE IF NOT EXISTS {{ template "database.dbName" . }} CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+        CREATE DATABASE IF NOT EXISTS {{- printf " %s_%s" (include "database.dbName" .) "upgrade" }} CHARACTER SET utf8 COLLATE utf8_unicode_ci;
+        GRANT ALL PRIVILEGES ON {{ template "database.dbName" . }}.* TO '{{ include "database.dbUser" . | b64dec }}'@'%';
+        GRANT ALL PRIVILEGES ON {{- printf " %s_%s" (include "database.dbName" .) "upgrade" }}.* TO '{{ include "database.dbUser" . | b64dec }}'@'%';
+        FLUSH PRIVILEGES;
+{{- end }}

@@ -1,0 +1,244 @@
+{{ if .Values.networkIsolation.networkPolicies.enabled }}
+{{ if .Values.web.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: flow-web
+      release: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 2080
+          protocol: TCP
+        - port: 2443
+          protocol: TCP
+      from:
+        - ipBlock:
+            cidr: {{ .Values.networkIsolation.allowFromCidr | default "0.0.0.0/0" | quote }}
+        - podSelector:
+            matchLabels:
+              app: cb-flow-bound-agent-flow-agent
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-server
+              release: {{ .Release.Name }}
+{{ if .Values.networkIsolation.web.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.web.additionalIngressSelector | indent 8 }}
+{{ end }}
+{{ end }}
+{{ if .Values.repository.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: repository-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: flow-repository
+      release: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8200
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: cb-flow-bound-agent-flow-agent
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-server
+              release: {{ .Release.Name }}
+{{ if .Values.repository.expose }}
+        - ipBlock:
+            cidr: {{ .Values.networkIsolation.allowFromCidr | default "0.0.0.0/0" | quote }}
+{{ end }}
+{{ if .Values.networkIsolation.repository.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.repository.additionalIngressSelector | indent 8 }}
+{{ end }}
+
+{{ end }}
+{{ if .Values.server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: server-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: flow-server
+      release: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8000
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+        - port: 61613
+          protocol: TCP
+        - port: 5445
+          protocol: TCP
+        - port: 5446
+          protocol: TCP
+        - port: 5447
+          protocol: TCP
+        - port: 5448
+          protocol: TCP
+        - port: 5449
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: cb-flow-bound-agent-flow-agent
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-web
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-repository
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-devopsinsight
+              release: {{ .Release.Name }}
+        - podSelector:
+            matchLabels:
+              app: flow-server
+              release: {{ .Release.Name }}
+{{ if .Values.server.expose }}
+        - ipBlock:
+            cidr: {{ .Values.networkIsolation.allowFromCidr | default "0.0.0.0/0" | quote }}
+{{ end }}
+{{ if .Values.networkIsolation.server.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.server.additionalIngressSelector | indent 8 }}
+{{ end }}
+
+{{ if .Values.clusteredMode }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: zookeeper-policy
+spec:
+  podSelector:
+    matchLabels:
+      ownerApp: "cloudbees-flow"
+      role: "cluster-coordinator"
+      mode: "private"
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - ports:
+      - port: 2888
+        protocol: TCP
+      - port: 3888
+        protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              ownerApp: "cloudbees-flow"
+              role: "cluster-coordinator"
+              mode: "private"
+    - ports:
+      - port: 53
+        protocol: TCP
+      - port: 53
+        protocol: UDP
+{{ if (include "cloudbees-flow.is-openshift" .) }}
+      - port: 5353
+        protocol: TCP
+      - port: 5353
+        protocol: UDP
+{{ end }}
+  ingress:
+    - ports:
+        - port: 2888
+          protocol: TCP
+        - port: 3888
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              ownerApp: "cloudbees-flow"
+              role: "cluster-coordinator"
+              mode: "private"
+    - ports:
+      - port: 2181
+        protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: {{ .Chart.Name }}-init-job
+              chart: {{ .Chart.Name }}
+              release: {{ .Release.Name }}
+              heritage: {{ .Release.Service }}
+        - podSelector:
+            matchLabels:
+              app: flow-server
+              release: {{ .Release.Name }}
+{{ if .Values.networkIsolation.zookeeper.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.zookeeper.additionalIngressSelector | indent 8 }}
+{{ end }}
+
+{{ end }}
+{{ end }}
+{{ if .Values.dois.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+    name: dois-policy
+spec:
+    podSelector:
+        matchLabels:
+          app: flow-devopsinsight
+          release: {{ .Release.Name }}
+    policyTypes:
+        - Ingress
+    ingress:
+      - ports:
+        - port: 9200
+          protocol: TCP
+        from:
+          - podSelector:
+              matchLabels:
+                app: flow-server
+                release: {{ .Release.Name }}
+{{ if .Values.dois.expose }}
+          - ipBlock:
+              cidr: {{ .Values.networkIsolation.allowFromCidr | default "0.0.0.0/0" | quote }}
+{{ end }}
+{{ if .Values.networkIsolation.dois.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.dois.additionalIngressSelector | indent 10 }}
+{{ end }}
+
+      - ports:
+        - port: 9300
+          protocol: TCP
+        from:
+          - podSelector:
+              matchLabels:
+                app: flow-devopsinsight
+                release: {{ .Release.Name }}
+{{ if .Values.networkIsolation.dois.additionalIngressSelector }}
+{{ toYaml .Values.networkIsolation.dois.additionalIngressSelector | indent 10 }}
+{{ end }}
+
+{{ end }}
+{{ end }}

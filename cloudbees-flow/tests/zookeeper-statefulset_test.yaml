@@ -1,0 +1,290 @@
+suite: CD Zookeeper StatefulSet Tests
+templates:
+  - charts/zookeeper/templates/statefulset.yaml
+values:
+  - enable-cluster.yaml
+tests:
+  - it: StatefulSet document generation and mandatory values check
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.replicas
+          value: 3
+
+# Image tests
+
+  - it: should create Zookeeper StatefulSet with the image from zookeeper.image section if global.cloudbees.imageRegistry is not set
+    set:
+      zookeeper:
+        image:
+          repository: chart-images-registry.test/custom-cbflow-zk
+          tag: custom-cbflow-zk-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: chart-images-registry.test/custom-cbflow-zk:custom-cbflow-zk-tag
+
+  - it: should create Zookeeper StatefulSet with the image from global.cloudbees.imageRegistry section if global.cloudbees.imageRegistry is set
+    set:
+      global:
+        cloudbees:
+          imageRegistry: global-images-registry.test
+          imageTag: global-image-tag
+      zookeeper:
+        image:
+          imageRepository: global-zk-image
+          repository: chart-images-registry.test/custom-cbflow-zk
+          tag: custom-cbflow-zk-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: global-images-registry.test/global-zk-image:global-image-tag
+
+# Security Context tests
+  - it: securityContext is enabled and has value 1000 by default
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: metadata.name
+          value: zookeeper
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsUser: 1000
+            fsGroup: 1000
+
+  - it: containerSecurityContext is empty by default
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value: { }
+
+  - it: user can disable securityContext
+    set:
+      zookeeper:
+        securityContext:
+          enabled: false
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: metadata.name
+          value: zookeeper
+      - notExists:
+          path: spec.template.spec.securityContext
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: User can set podSecurityContext
+    set:
+      zookeeper:
+        securityContext:
+          enabled: true
+          fsGroup: 10001
+          fsGroupChangePolicy: "OnRootMismatch"
+          runAsGroup: 10002
+          runAsNonRoot: true
+          runAsUser: 10003
+          seLinuxOptions:
+            level: s0:c123,c456
+            role: role1
+            type: type1
+            user: user1
+          seccompProfile:
+            type: RuntimeDefault
+          supplementalGroups: [ 10005, 10006 ]
+          sysctls:
+            - name: net.core.somaxconn
+              value: "1024"
+            - name: net.ipv4.tcp_syncookies
+              value: "1"
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            fsGroupChangePolicy: "OnRootMismatch"
+            runAsGroup: 10002
+            runAsNonRoot: true
+            runAsUser: 10003
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+
+  - it: User can set containerSecurityContext
+    set:
+      zookeeper:
+        securityContext:
+          enabled: true
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ "ALL" ]
+          privileged: false
+          procMount: "Default"
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10004
+          seLinuxOptions:
+            level: s0:c123,c456
+            role: role1
+            type: type1
+            user: user1
+          seccompProfile:
+            type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsUser: 1000
+            fsGroup: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set podSecurityContext and containerSecurityContext
+    set:
+      zookeeper:
+        securityContext:
+          enabled: true
+          fsGroup: 10001
+          runAsUser: 10002
+          runAsNonRoot: true
+          fsGroupChangePolicy: "OnRootMismatch"
+          seLinuxOptions:
+            level: s0:c123,c456
+            role: role1
+            type: type1
+            user: user1
+          seccompProfile:
+            type: RuntimeDefault
+          supplementalGroups: [ 10005, 10006 ]
+          sysctls:
+            - name: net.core.somaxconn
+              value: "1024"
+            - name: net.ipv4.tcp_syncookies
+              value: "1"
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ "ALL" ]
+          privileged: false
+          procMount: "Default"
+          readOnlyRootFilesystem: true
+          runAsGroup: 10001
+          runAsNonRoot: true
+          runAsUser: 10004
+          seLinuxOptions:
+            level: s0:c123,c456
+            role: role1
+            type: type1
+            user: user1
+          seccompProfile:
+            type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            runAsUser: 10002
+            runAsNonRoot: true
+            fsGroupChangePolicy: "OnRootMismatch"
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set securityContext runAsUser=0
+    set:
+      zookeeper:
+        securityContext:
+          enabled: true
+          runAsUser: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 1000
+            runAsUser: 0
+
+  - it: User can set securityContext fsGroup=0
+    set:
+      zookeeper:
+        securityContext:
+          enabled: true
+          fsGroup: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 0
+            runAsUser: 1000

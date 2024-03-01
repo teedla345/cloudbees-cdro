@@ -1,0 +1,26 @@
+suite: CD Repository External Service Tests
+templates:
+  - repository-service-external.yaml
+tests:
+  - it: User can enable and set annotations to repository-service-external
+    set:
+      repository:
+        externalService:
+          enabled: true
+          annotations:
+            foo/bar: someValue
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Service }
+      - equal:
+          path: metadata.annotations["foo/bar"]
+          value: someValue
+
+  - it: The user cannot create an external service if it is not enabled
+    set:
+      repository:
+        externalService:
+          annotations:
+            foo/bar: someValue
+    asserts:
+      - hasDocuments: { count: 0 }

@@ -1,0 +1,278 @@
+{{- if .Values.server.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flow-init-scripts
+  labels:
+    app: {{ .Chart.Name }}
+    chart: {{ .Chart.Name }}
+data:
+  startup.sh: |
+    #!/bin/bash
+
+    # We don't need any actions here for the upgrade case
+    if [ "$CBF_SERVER_UPGRADE_MODE" = "1" ]; then
+        exit 0
+    fi
+
+    log() {
+        echo "$(date --iso-8601=ns | sed 's/[,\.]\([0-9][0-9][0-9]\).\+$/.\1/') * $1"
+    }
+
+    set -e
+
+    (
+        wait_server_state() {
+            SERVER_STATE=$(ectool getServerStatus --timeout 5000 --serverStateOnly 1)
+
+            while [ "$SERVER_STATE" != "$1" ]; do
+                if [[ "$SERVER_STATE" == "failed" ]]; then
+                    log "ERROR: Server failed to run failing initialization attempt"
+                    exit 2
+                else
+                    log "Server state is ${SERVER_STATE}, waiting for $1"
+                fi
+                PREV_STATE=${SERVER_STATE}
+                SERVER_STATE=$(ectool getServerStatus --timeout 5000 --serverStateOnly 1)
+                sleep 5
+            done
+
+            log "Server has state: $SERVER_STATE"
+        }
+
+        log "Waiting for CloudBees Flow server up..."
+        {{- if not .Values.clusteredMode }}
+        log "Waiting for bundled database to be up"
+        sleep 60
+        {{- end }}
+
+        wait_server_state "databaseConfiguration"
+
+        log "Configuring CloudBees Flow server database..."
+        {{- if not .Values.database.customDatabaseUrl }}
+        if ! ectool --silent --timeout 36000 setDatabaseConfiguration \
+             --databaseType "$CBF_DB_TYPE" --port "$CBF_DB_PORT" \
+             --databaseName "$CBF_DB_NAME" --userName "$CBF_DB_USER" \
+             --password "$CBF_DB_PASSWORD" --hostName "$CBF_DB_HOST"
+        then
+            log "ERROR: could not configure CloudBees Flow server."
+            exit 1
+        fi
+        {{- else }} 
+        if ! ectool --silent --timeout 36000 setDatabaseConfiguration \
+             --databaseType "$CBF_DB_TYPE" --customDatabaseUrl "$CBF_DB_CUSTOM_URL" \
+             --databaseName "$CBF_DB_NAME" --userName "$CBF_DB_USER" \
+             --password "$CBF_DB_PASSWORD" 
+        then
+            log "ERROR: could not configure CloudBees Flow server."
+            exit 1
+        fi
+    
+        {{- end }} 
+        {{- if not .Values.clusteredMode }}
+        if [ -d /custom-config ]; then
+            cp /opt/cbflow/conf/passkey /custom-config/passkey
+        fi
+        {{- end }}
+        log "Database '${CBF_DB_TYPE}' configured on CloudBees Flow server"
+
+    ) &
+
+  startup-serverup.sh: |
+    #!/bin/bash
+
+    # We don't need any actions here for the upgrade case
+    if [ "$CBF_SERVER_UPGRADE_MODE" = "1" ]; then
+        exit 0
+    fi
+
+    log() {
+        echo "$(date --iso-8601=ns | sed 's/[,\.]\([0-9][0-9][0-9]\).\+$/.\1/') * $1"
+    }
+
+    set -e
+
+    log "Setting general properties..."
+
+    if ! RESULT="$(LC_ALL=C ectool --silent login admin changeme 2>&1)"; then
+        if echo "$RESULT" | grep --silent --fixed-strings 'incorrect password'; then
+            log "WARNING: could not login with the default password. The current database may have been initialized earlier."
+            exit 0
+        else
+            log "ERROR: could not login with the default password: $RESULT"
+            exit 1
+        fi
+    fi
+
+    (set -x; ectool --silent modifyWorkspace "default" --local true)
+    (set -x; ectool --silent setProperty /server/settings/stompClientUri stomp+ssl://"$CBF_SERVER_HOST":61613)
+    (set -x; ectool --silent setProperty /server/settings/stompSecure true)
+    (set -x; ectool --silent setProperty /server/settings/ipAddress "$CBF_SERVER_HOST")
+    (set -x; ectool --silent setProperty /server/settings/maxUploadSize "50000000000")
+    (set -x; ectool --silent setProperty /server/settings/webServerHost "$CBF_WEB_FQDN")
+
+    if [ "$CBF_SERVER_SDA_MODE" == "true" ] && [ "$CBF_OC_URL" ] ; then
+      echo "setting OC URL"
+      (set -x; ectool --silent createCIConfiguration --ciConfigurationName 'Default CloudBees CI operations center' --ciConfigurationType CB_OPS_CENTER --serverUrl "$CBF_OC_URL" --isDefault true)
+      case "$CBF_OC_URL" in
+        http://*) (set -x; ectool --silent createCIConfiguration --ciConfigurationName 'Default CloudBees CI operations center (HTTPS)' --ciConfigurationType CB_OPS_CENTER --serverUrl https://"${CBF_OC_URL##http://}");;
+      esac
+    fi
+    if [ "$CBF_GITOPS_ENABLED" == "true" ] && [ "$CBF_GIT_TOKEN" ] ; then
+      echo "setting GitOps jobs"
+      printf "$(cat /custom-config/ScmSync.groovy)" "$CBF_GIT_TOKEN" >/tmp/ScmSync.groovy
+      (set -x; ectool --silent evalDsl --dslFile /tmp/ScmSync.groovy)
+      rm -f /tmp/ScmSync.groovy
+    fi
+    if [ -f "/custom-scripts/custom-install.sh" ]; then
+        # Piping true to ignore error to avoid init execution failure due to custom scripts
+        log "Running custom script "
+        /bin/bash /custom-scripts/custom-install.sh  || true
+    fi
+
+
+  register_repo.pl: |
+      use strict;
+      use ElectricCommander;
+      use XML::XPath;
+      use Net::Domain qw(hostfqdn);
+      use Sys::Hostname;
+
+      # Turn off output buffering
+
+      $| = 1;
+
+      # The following variables will be substituted with the appropriate values by
+      # the installer.
+
+      $::gPlatform                        = 'Linux-x86';
+      $::gAgentPort                       = '7800';
+      $::gRepositoryPort                  = '8200';
+
+      sub invokeCommander($$;$) {
+          my ($functionName, $functionArgsRef, $suppressError) = @_;
+          print("Invoking function $functionName.\n");
+          my @functionArgs = @{$functionArgsRef};
+          my $xpath = $::gCommander->$functionName(@functionArgs);
+          my $errMsg = $::gCommander->getError();
+          if (defined($errMsg) && $errMsg =~ m{ExpiredSession|NoCredentials}) {
+              $xpath = $::gCommander->$functionName(@functionArgs);
+              $errMsg = $::gCommander->getError();
+          }
+          if (defined($errMsg) && $errMsg ne "") {
+              if (defined($suppressError) && $suppressError ne "" && index($errMsg, $suppressError) >= 0) {
+                  return (1, $errMsg);
+              } else {
+                  print($errMsg);
+                  exit 1;
+              }
+          } elsif ($functionName !~ m/(putFile|getFile)/) {
+              $xpath = $xpath->findnodes('/responses/response')->get_node(0);
+              return (0, $xpath);
+          }
+      }
+
+      $::gCommander = new ElectricCommander;
+      $::gCommander->abortOnError(0);
+
+      my $error;
+      my $xpath;
+
+      # set plugins directory suitable for deployment in containers
+      invokeCommander("setProperty", ["/server/settings/pluginsDirectory", {value => "/opt/cbflow/plugins"}]);
+
+      my $repoHost = {{ .Values.repository.serviceEndpoint | default "flow-repository" | quote }} ;
+
+      ($error, $xpath) = invokeCommander("getRepository", ["default"], "NoSuchRepository");
+      if ($error) {
+          my %args = (
+              "description"    => "Default repository created during installation.",
+              "url"            => "https://$repoHost:$::gRepositoryPort"
+          );
+          invokeCommander("createRepository", ["default", \%args]);
+      }
+
+      my $boundAgentHost = "flow-bound-agent";
+      my %boundAgentArgs = (
+          "description"     => "Local resource created during installation.",
+          "hostName"        => $boundAgentHost,
+          "port"            => $::gAgentPort
+      );
+
+      ($error, $xpath) = invokeCommander("getResource", ["local"], "NoSuchResource");
+      if ($error) {
+          invokeCommander("createResource", ["local", \%boundAgentArgs]);
+      }else{
+          invokeCommander("modifyResource", ["local", \%boundAgentArgs]);
+      }
+
+      ($error, $xpath) = invokeCommander("getResource", ["default"], "NoSuchResource");
+      if ($error) {
+          # If there's an agent installed and no pre-existing resource named
+          # "default", create a resource pool named "default" and place the
+          # local agent inside.
+          ($error, $xpath) = invokeCommander("getResourcePool", ["default"], "NoSuchResourcePool");
+          if ($error) {
+              my %args = (
+                  "description"    => "Default resource pool containing local agent created during installation.",
+                  "resourceName"   => "local"
+              );
+              ($error, $xpath) = invokeCommander("createResourcePool", ["default", \%args]);
+          }
+      }
+
+
+  ScmSync.groovy: |
+
+      def GitToken = '%s' ;
+      def Repo =  {{ .Values.gitops.repo | quote }} ;
+
+      aclEntry systemObjectName: "projects",
+        objectType: 'systemObject',
+        principalType : 'user',
+        principalName: "project: Electric Cloud",
+        modifyPrivilege : 'allow'
+
+      project "GitOps",{
+
+        credential "token_credential",
+            userName: "n/a",
+            password: GitToken
+
+        pluginConfiguration 'ServerGitOps', {
+          field = [
+            'authType': 'token',
+            'debugLevel': '0',
+            'ignoreSSLErrors': 'false',
+            'library': 'jgit',
+            'repositoryURL': Repo,
+            'token_credential': 'token_credential',
+          ]
+          pluginKey = 'EC-Git'
+          credentialReferenceParameter = [
+              'token_credential': '/projects/GitOps/credentials/token_credential',
+          ]
+        }
+
+        scmSync "ServerGitOps",{
+          branch = "main"
+          configurationName = "ServerGitOps"
+          configurationProjectName = projectName
+          destinationDir = "/workspace/ServerGitOps"
+          repository = Repo
+          scmType = "git"
+          syncType = "fromScm"
+          resourceName = "local"
+          trigger "ServerGitOps",{
+            triggerType = "polling"
+            pluginKey = "EC-Git"
+          }
+        }
+
+      }
+
+
+{{- end }}
+
+
+

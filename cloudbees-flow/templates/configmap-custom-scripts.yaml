@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "{{.Release.Name}}-customscript"
+  labels:
+    app: cloudbees-flow
+    chart: cloudbees-flow
+data:
+{{- if .Values.server.customScript }}
+  custom-install.sh: {{ .Values.server.customScript | b64enc }}
+{{- else }}
+  custom-install.sh: {{ "echo" | b64enc }}
+{{- end }}

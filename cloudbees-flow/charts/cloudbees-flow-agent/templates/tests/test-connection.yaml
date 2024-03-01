@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "cloudbees-flow-agent.fullname" . }}-test-connection"
+  labels:
+{{ include "cloudbees-flow-agent.labels" . | indent 4 }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+    - name: test-hostnames
+      image: {{ .Values.helmTests.image }}
+      command: ['sh']
+      args:  ['-c', 'ec=0;for i in $0; do wget --no-check-certificate "https://$i:7800/showError?code=200"; ec=$((ec+$?)); done; exit $ec', {{ template "cloudbees-flow-agent.hostnames" . }}]
+  restartPolicy: Never

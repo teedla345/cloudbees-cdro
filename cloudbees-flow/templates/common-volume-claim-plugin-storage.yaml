@@ -1,0 +1,26 @@
+{{- if .Values.server.enabled -}}
+{{- if not .Values.storage.volumes.serverPlugins.existingClaim -}}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: "{{ .Values.storage.volumes.serverPlugins.name }}"
+spec:
+  accessModes:
+{{- if and ( not .Values.clusteredMode ) ( not .Values.storage.volumes.serverPlugins.storageClass ) }}
+    - "ReadWriteOnce"
+{{- else }}
+    - {{ .Values.storage.volumes.serverPlugins.accessMode | quote }}
+{{- end }}
+  resources:
+    requests:
+      storage: "{{ .Values.storage.volumes.serverPlugins.storage }}"
+        {{- if .Values.storage.volumes.serverPlugins.storageClass }}
+        {{- if (eq "-"  .Values.storage.volumes.serverPlugins.storageClass) }}
+  storageClassName: ""
+        {{- else }}
+  storageClassName: {{  .Values.storage.volumes.serverPlugins.storageClass | quote }}
+        {{- end }}
+        {{- end }}
+{{- end }}
+{{- end }}

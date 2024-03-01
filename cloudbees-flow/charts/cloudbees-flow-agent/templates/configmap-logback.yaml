@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-logging-config"
+  labels:
+    app: flow-agent
+    chart: cloudbees-flow-agent
+data:
+  agent-logback-config: |
+      # logging-local.properties
+      #
+      # This file customizes the logging configuration of the CloudBees CD agent
+      #
+      # Statements are in the form <logger>=<level>, for example:
+      com.electriccloud.commander.agent={{ .Values.logLevel }}

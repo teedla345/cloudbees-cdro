@@ -1,0 +1,26 @@
+{{- if and  .Values.dois.enabled .Values.dois.externalService.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-devopsinsight-external
+  labels:
+    app: flow-devopsinsight
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- if .Values.dois.externalService.annotations }}
+  annotations:
+{{ toYaml .Values.dois.externalService.annotations | indent 4 }}
+{{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: servicep1-dois
+      port: 9200
+      targetPort: p1-dois
+      protocol: TCP
+  selector:
+    app: flow-devopsinsight
+    release: {{ .Release.Name }}
+{{- end }}
+

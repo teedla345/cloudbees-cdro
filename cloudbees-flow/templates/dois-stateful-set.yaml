@@ -1,0 +1,456 @@
+{{- if .Values.dois.enabled -}}
+{{ template "validate.dois-certificates" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: flow-devopsinsight
+  labels:
+    app: flow-devopsinsight
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- toYaml .Values.customLabels | nindent 4 }}
+spec:
+  replicas: {{ .Values.dois.replicas }}
+  podManagementPolicy: "Parallel"
+  serviceName: flow-devopsinsight
+  selector:
+    matchLabels:
+      app: flow-devopsinsight
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: flow-devopsinsight
+        release: {{ .Release.Name }}
+{{- if .Values.dois.openshiftNodeTuning }}
+        tuned.openshift.io/elasticsearch: ""
+{{- end }}
+{{- toYaml .Values.customLabels | nindent 8 }}
+    spec:
+{{- with .Values.dois.affinity }}
+      affinity:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- with  .Values.dois.tolerations }}
+      tolerations:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- if .Values.dois.nodeSelector }}
+      nodeSelector:
+            {{ toYaml .Values.dois.nodeSelector | nindent 8 }}
+{{ else }}
+      nodeSelector:
+        {{ include "os.label" . }}: linux
+{{- end }}
+      serviceAccountName: {{ template "cloudbees-flow.serviceAccountName" . }}
+{{- if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{- end}}
+      initContainers:
+{{- if .Values.dois.sysctlInitContainer.enabled }}
+        - name: sysctl
+          image: {{ .Values.dois.sysctlInitContainer.imageRepository }}:{{ .Values.dois.sysctlInitContainer.imageTag }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          resources:
+            limits:
+              cpu: "25m"
+              memory: "128Mi"
+            requests:
+              cpu: "25m"
+              memory: "128Mi"
+          command: ["/bin/sh"]
+          args: ["-c", "sysctl -w vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+            runAsUser: 0
+{{- end }}
+{{- if and .Values.volumePermissions.enabled .Values.dois.volumesPermissionsInitContainer.enabled }}
+        - name: volumes-permissions
+{{- if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.dois.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{- else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.dois.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+          - name: {{ .Values.storage.volumes.doisStorage.name }}
+            mountPath: /elasticsearch-data
+          command:
+          - sh
+          - -c
+          - |
+            set -e
+            set -x
+            chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.fsGroup }} /elasticsearch-data
+          resources:
+            limits:
+              cpu: "25m"
+              memory: "128Mi"
+            requests:
+              cpu: "25m"
+              memory: "128Mi"
+{{- end }}
+
+{{- if and (and .Values.volumePermissions.enabled .Values.dois.volumesPermissionsInitContainer.enabled) (and .Values.dois.backup.enabled (not .Values.dois.backup.externalRepo.enabled)) }}
+        - name: volumes-permissions-backup
+{{ if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.dois.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.dois.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+          - name: {{ .Values.storage.volumes.doisStorage.name }}-backup
+            mountPath: {{ .Values.dois.backup.location | quote }}
+          command:
+          - sh
+          - -c
+          - |
+            set -e
+            set -x
+            chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.fsGroup }} {{ .Values.dois.backup.location | quote }}
+          resources:
+            limits:
+              cpu: "25m"
+              memory: "128Mi"
+            requests:
+              cpu: "25m"
+              memory: "128Mi"
+{{- end }}
+      containers:
+      - name: flow-devopsinsight
+{{- if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.dois.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{- else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.dois.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+        env:
+        - name: CBF_SERVER_HOST
+          value: {{ required ".serverName is required for Flow DevOps Insight server deployment" .Values.serverName | quote }}
+        - name: CBF_DOIS_HOST
+          value: {{ tpl .Values.dois.serviceEndpoint . | quote }}
+        - name: CBF_SERVER_USER
+          value: admin
+        - name: CBF_SERVER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+              name: {{ .Values.flowCredentials.existingSecret }}
+{{- else }}
+              name: {{ template "cloudbees-flow.fullname" . }}-credentials
+{{- end }}
+              key: CBF_SERVER_ADMIN_PASSWORD
+{{- if .Values.dois.credentials.existingSecret }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.credentials.existingSecret }}
+              key: CBF_DOIS_ADMIN_PASSWORD
+        - name: CBF_DOIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.credentials.existingSecret }}
+              key: CBF_DOIS_PASSWORD
+
+{{- else }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois
+              key: CBF_DOIS_ADMIN_PASSWORD
+        - name: CBF_DOIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois
+              key: CBF_DOIS_PASSWORD
+{{- end }}
+{{- if .Values.dois.esClusterName }}
+        - name: CBF_DOIS_ES_CLUSTER_NAME
+          value: {{ .Values.dois.esClusterName | quote }}
+{{- end }}
+{{- if gt (.Values.dois.replicas | int) 1 }}
+        - name: CBF_DOIS_ES_MIN_MASTER_NODES
+          value: {{ .Values.dois.esMinMasterNodes | quote }}
+        - name: CBF_DOIS_ES_DISCOVERY_HOSTS
+          value: {{ include "dois.nodes" . | trimSuffix "," | quote }}
+{{- end }}
+{{- if .Values.dois.esNumberOfShards }}
+        - name: CBF_DOIS_ES_NUMBER_OF_SHARDS
+          value: {{ .Values.dois.esNumberOfShards | quote }}
+{{- end }}
+{{- if .Values.dois.esRam }}
+        - name: CBF_DOIS_ES_RAM
+          value: {{ .Values.dois.esRam | quote }}
+{{- end }}
+{{- if .Values.dois.backup.enabled }}
+        - name: CBF_DOIS_BACKUP
+          value: "true"
+{{- if not .Values.dois.backup.externalRepo.enabled }}
+        - name: CBF_DOIS_PATH_REPO
+          value: {{ .Values.dois.backup.location | quote }}
+{{- end }}
+{{- if .Values.dois.backup.externalRepo.enabled }}
+        - name: CBF_DOIS_BACKUP_REPO_TYPE
+          value: {{ .Values.dois.backup.externalRepo.type | quote }}
+{{- if not .Values.dois.backup.externalRepo.serviceAccountsIdentity }}
+{{- if eq .Values.dois.backup.externalRepo.type "s3" }}
+{{- if not .Values.dois.backup.externalRepo.existingSecret }}
+
+        - name: CBF_DOIS_AWS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-backup
+              key: AWS_ACCESS_KEY
+        - name: CBF_DOIS_AWS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name:  {{ template "cloudbees-flow.fullname" . }}-dois-backup
+              key: AWS_SECRET_KEY
+{{- else }}
+        - name: CBF_DOIS_AWS_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.backup.externalRepo.existingSecret }}
+              key: AWS_ACCESS_KEY
+        - name: CBF_DOIS_AWS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name:  {{ .Values.dois.backup.externalRepo.existingSecret }}
+              key: AWS_SECRET_KEY
+
+{{- end }}
+{{- end }}
+{{- if eq .Values.dois.backup.externalRepo.type "gcs" }}
+{{- if not .Values.dois.backup.externalRepo.existingSecret }}
+        - name: CBF_DOIS_GCS_SA_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-backup
+              key: GCS_SA_KEY
+{{- else }}
+        - name: CBF_DOIS_GCS_SA_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.backup.externalRepo.existingSecret }}
+              key: GCS_SA_KEY
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-ca-crt.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_CA_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_CA_CRT
+{{- else }}
+        - name: CBF_DOIS_CA_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_CA_CRT
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-ca-key.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_CA_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_CA_KEY
+{{- else }}
+        - name: CBF_DOIS_CA_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_CA_KEY
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-sign-crt.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_SIGN_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_SIGN_CRT
+{{- else }}
+        - name: CBF_DOIS_SIGN_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_SIGN_CRT
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-sign-key.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_SIGN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_SIGN_KEY
+{{- else }}
+        - name: CBF_DOIS_SIGN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_SIGN_KEY
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-node-crt.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_NODE_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_NODE_CRT
+{{- else }}
+        - name: CBF_DOIS_NODE_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_NODE_CRT
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-node-key.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_NODE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_NODE_KEY
+{{- else }}
+        - name: CBF_DOIS_NODE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_NODE_KEY
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-admin-crt.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_ADMIN_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_ADMIN_CRT
+{{- else }}
+        - name: CBF_DOIS_ADMIN_CRT
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_ADMIN_CRT
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-admin-key.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_ADMIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_ADMIN_KEY
+{{- else }}
+        - name: CBF_DOIS_ADMIN_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_ADMIN_KEY
+{{- end }}
+{{- end }}
+{{- if include "cloudbees-flow.is-dois-certificate-crt-bundle.enabled" . }}
+{{- if .Values.dois.certificates.existingSecret  }}
+        - name: CBF_DOIS_CRT_BUNDLE
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.certificates.existingSecret }}
+              key: CBF_DOIS_CRT_BUNDLE
+{{- else }}
+        - name: CBF_DOIS_CRT_BUNDLE
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois-certificates
+              key: CBF_DOIS_CRT_BUNDLE
+{{- end }}
+{{- end }}
+{{- if .Values.dois.certificates.admin.dname  }}
+        - name: CBF_DOIS_ADMIN_DNAME
+          value: {{ .Values.dois.certificates.admin.dname  }}
+{{- end }}
+{{- if .Values.dois.extraEnvs }}
+{{ toYaml .Values.dois.extraEnvs | indent 8 }}
+{{- end }}
+        readinessProbe:
+          tcpSocket:
+            port: 9200
+          initialDelaySeconds: {{ .Values.dois.healthProbeReadinessInitialDelaySeconds | default 60 }}
+          periodSeconds: {{ .Values.dois.healthProbeReadinessPeriodSeconds | default 5 }}
+          failureThreshold: {{ .Values.dois.healthProbeReadinessFailureThreshold | default 3 }}
+        livenessProbe:
+          exec:
+            command: ["/opt/cbflow/health-check"]
+          initialDelaySeconds: {{ .Values.dois.healthProbeLivenessInitialDelaySeconds | default 60 }}
+          periodSeconds:  {{ .Values.dois.healthProbeLivenessPeriodSeconds | default 20 }}
+          failureThreshold: {{ .Values.dois.healthProbeLivenessFailureThreshold | default 3 }}
+
+        ports:
+        - name: p1-dois
+          containerPort: 9200
+          protocol: TCP
+        resources:
+            {{- toYaml .Values.dois.resources | nindent 12 }}
+{{- if eq .Values.securityContext.enabled true }}
+        securityContext:
+            {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}
+        volumeMounts:
+        - mountPath: /elasticsearch-data
+          name: {{ .Values.storage.volumes.doisStorage.name }}
+{{- if and .Values.dois.backup.enabled (not .Values.dois.backup.externalRepo.enabled) }}
+        - mountPath: {{ .Values.dois.backup.location | quote }}
+          name: {{ .Values.storage.volumes.doisStorage.name }}-backup
+{{- end }}
+{{- if .Values.dois.additionalContainers }}
+{{ toYaml .Values.dois.additionalContainers | indent 6 }}
+{{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: {{ .Values.storage.volumes.doisStorage.name }}
+      spec:
+        accessModes:
+          - {{ .Values.storage.volumes.doisStorage.accessMode | default "ReadWriteOnce" | quote }}
+        resources:
+          requests:
+            storage: "{{ .Values.storage.volumes.doisStorage.storage }}"
+              {{- if .Values.storage.volumes.doisStorage.storageClass }}
+              {{- if (eq "-"  .Values.storage.volumes.doisStorage.storageClass) }}
+        storageClassName: ""
+              {{- else }}
+        storageClassName: {{ .Values.storage.volumes.doisStorage.storageClass | quote }}
+              {{- end }}
+              {{- end }}
+{{- if and .Values.dois.backup.enabled (not .Values.dois.backup.externalRepo.enabled) }}
+    - metadata:
+        name: {{ .Values.storage.volumes.doisStorage.name }}-backup
+      spec:
+        accessModes:
+          - {{ .Values.storage.volumes.doisStorage.accessMode | default "ReadWriteOnce" | quote }}
+        resources:
+          requests:
+            storage: "{{ .Values.storage.volumes.doisStorage.storage }}"
+              {{- if .Values.storage.volumes.doisStorage.storageClass }}
+              {{- if (eq "-"  .Values.storage.volumes.doisStorage.storageClass) }}
+        storageClassName: ""
+              {{- else }}
+        storageClassName: {{ .Values.storage.volumes.doisStorage.storageClass | quote }}
+              {{- end }}
+              {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,4 @@
+dois:
+  backup:
+    enabled: true
+    restoreSnapshot: true

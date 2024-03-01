@@ -1,0 +1,137 @@
+{{- if and .Values.dois.backup.enabled  .Values.dois.backup.restoreSnapshot -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flow-devopsinsight-restore-backup-job
+  annotations:
+    "helm.sh/hook": "post-install,post-upgrade"
+    "helm.sh/hook-weight": "1"
+  labels:
+    app: flow-devopsinsight-restore-backup
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- toYaml .Values.customLabels | nindent 4 }}
+
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: flow-devopsinsight-restore-backup
+        release: {{ .Release.Name }}
+    {{- toYaml .Values.customLabels | nindent 8 }}
+    spec:
+{{- if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{- end }}
+      restartPolicy: Never
+      serviceAccountName: {{ include "cloudbees-flow.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: dois-es-health
+{{ if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.dois.backup.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.dois.backup.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+        env:
+        - name: CBF_DOIS_HOST
+          value: {{ tpl .Values.dois.serviceEndpoint . | quote }}
+        - name: CBF_DOIS_PATH_REPO
+          value: {{ .Values.dois.backup.location  | quote }}
+{{- if .Values.dois.credentials.existingSecret }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.credentials.existingSecret }}
+              key: CBF_DOIS_ADMIN_PASSWORD
+{{- else }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois
+              key: CBF_DOIS_ADMIN_PASSWORD
+{{- end }}
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          set -x
+          CURL_OUTPUT=1
+          echo "Waiting till ES server UP"
+          while [ $CURL_OUTPUT -gt 0 ] ; do curl -XGET -u admin:$CBF_DOIS_ADMIN_PASSWORD --insecure --header "Content-Type: application/json" "https://$CBF_DOIS_HOST:9200/_cluster/health" ; CURL_OUTPUT=$? ;echo $CURL_OUTPUT ; done
+          echo "ES Server is UP"
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "128Mi"
+          requests:
+            cpu: "25m"
+            memory: "128Mi"
+
+      containers:
+      - name: dois-restore-backup
+        image: {{ .Values.dois.backup.cleanupImageRepository }}:{{ .Values.dois.backup.cleanupImageTag }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+        env:
+        - name: CBF_DOIS_HOST
+          value: {{ tpl .Values.dois.serviceEndpoint . | quote }}
+{{- if .Values.dois.backup.restoreSnapshotName }}
+        - name: CBF_DOIS_SNAPSHOT_NAME
+          value: {{ .Values.dois.backup.restoreSnapshotName  | quote }}
+{{- end }}
+{{- if .Values.dois.credentials.existingSecret }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.dois.credentials.existingSecret }}
+              key: CBF_DOIS_ADMIN_PASSWORD
+{{- else }}
+        - name: CBF_DOIS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "cloudbees-flow.fullname" . }}-dois
+              key: CBF_DOIS_ADMIN_PASSWORD
+{{- end }}
+{{- if .Values.dois.backup.externalRepo.enabled }}
+        - name: CBF_DOIS_BACKUP_REPO_TYPE
+          value: {{ .Values.dois.backup.externalRepo.type | quote }}
+        - name: CBF_DOIS_BACKUP_BUCKET
+          value: {{ .Values.dois.backup.externalRepo.bucketName | quote }}
+        - name: CBF_DOIS_BACKUP_REGION
+          value: {{ .Values.dois.backup.externalRepo.region | quote }}
+{{- end }}
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          set -x
+          pip install requests==2.26.0
+          python /restore-scripts/restore.py
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "128Mi"
+          requests:
+            cpu: "25m"
+            memory: "128Mi"
+{{- if eq .Values.securityContext.enabled true }}
+        securityContext:
+        {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - name: restore-scripts
+          mountPath: /restore-scripts/restore.py
+          subPath: restore.py
+      volumes:
+      - name: restore-scripts
+        configMap:
+          name: "{{.Release.Name}}-dois-restore-scripts"
+{{- end }}

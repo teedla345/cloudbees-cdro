@@ -1,0 +1,272 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+  labels:
+    app: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    {{- toYaml .Values.customLabels | nindent 4 }}
+
+{{- if .Values.customScript }}
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/configmap-custom-scripts.yaml") . | sha256sum }}
+{{- end }}
+spec:
+  serviceName: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agents"
+  replicas: {{ .Values.replicas }}
+  podManagementPolicy: {{ .Values.podManagementPolicy }}
+  selector:
+    matchLabels:
+      app: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: "{{ .Values.releaseNamePrefix | default .Release.Name }}-flow-agent"
+        release: {{ .Release.Name }}
+    spec:
+{{- with .Values.affinity }}
+      affinity:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- with  .Values.tolerations }}
+      tolerations:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- with  .Values.nodeSelector }}
+      nodeSelector:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+      serviceAccountName: {{ include "cloudbees-flow-agent.serviceAccountName" . }}
+{{- if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{- end }}
+{{- if .Values.volumePermissions.enabled }}
+      initContainers:
+      - name: volumes-permissions
+{{- if .Values.global }}
+{{- if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.images.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{- else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.images.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+{{- else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.images.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: {{ .Values.storage.volumes.agentWorkspace.name }}
+          mountPath: /workspace
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          set -x
+          chmod 1777 /workspace
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "128Mi"
+          requests:
+            cpu: "25m"
+            memory: "128Mi"
+{{- end }}
+      containers:
+        - name: flow-agent
+{{- if .Values.global }}
+{{- if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.images.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{- else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.images.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+{{- else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.images.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+{{- if eq .Values.securityContext.enabled true }}
+          securityContext:
+            {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}
+          env:
+{{- if .Values.resourceName }}
+          - name: CBF_RESOURCE_NAME
+            value: {{ include "cloudbees-flow-agent.resourcename" . | quote }}
+{{- end }}
+{{- if .Values.resourcePools }}
+          - name: CBF_RESOURCE_POOLS
+            value: {{ .Values.resourcePools | quote }}
+{{- end }}
+{{- if .Values.zoneName }}
+          - name: CBF_ZONE_NAME
+            value: {{ .Values.zoneName | quote }}
+{{- end }}
+{{- if .Values.workspaceName }}
+          - name: CBF_WORKSPACE_NAME
+            value: {{ .Values.workspaceName | quote }}
+{{- end }}
+          - name: CBF_TRUSTED_AGENT
+{{- if .Values.trustedAgent }}
+            value: "true"
+{{- else }}
+            value: "false"
+{{- end }}
+{{- if .Values.resourceType }}
+{{- if not (has .Values.resourceType (list "concurrent" "registered")) }}
+{{ fail "Invalid 'resourceType'. Supported values are: 'concurrent', or 'registered'" }}
+{{- end }}
+          - name: CBF_RESOURCE_TYPE
+            value: {{ .Values.resourceType | quote }}
+{{- end }}
+{{- if .Values.serverEndpoint }}
+          - name: CBF_SERVER_HOST
+            value: {{ .Values.serverEndpoint }}
+{{- if .Values.flowCredentials.serverSecretReference }}
+          - name: CBF_SERVER_USER
+            value: {{ .Values.flowCredentials.user }}
+          - name: CBF_SERVER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+                name: "{{ .Values.flowCredentials.existingSecret }}"
+{{- else }}
+                name: "{{ template "cloudbees-flow.fullname" . }}-credentials"
+{{- end }}
+                key: CBF_SERVER_ADMIN_PASSWORD
+{{- else }}
+          - name: CBF_SERVER_USER
+            valueFrom:
+              secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+                name: "{{ .Values.flowCredentials.existingSecret }}"
+{{- else }}
+                name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-credentials"
+{{- end }}
+                key: CBF_SERVER_USER
+          - name: CBF_SERVER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+                name: "{{ .Values.flowCredentials.existingSecret }}"
+{{- else }}
+                name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-credentials"
+{{- end }}
+                key: CBF_SERVER_PASSWORD
+{{- end }}
+
+{{- end }}
+{{- if not .Values.autoscaling.enabled }}
+          - name: K8S_SERVICE_NAME
+            value: "{{ .Values.releaseNamePrefix | default .Release.Name  }}-flow-agents.{{ .Release.Namespace }}"
+{{- end }}
+{{- if .Values.service.publicHostName }}
+          - name: PUBLIC_HOSTNAME
+            value: "{{ .Values.service.publicHostName }}"
+{{- else if .Values.autoscaling.enabled }}
+          - name: PUBLIC_HOSTNAME
+            value: "{{ .Values.releaseNamePrefix | default .Release.Name  }}-flow-agents.{{ .Release.Namespace }}"
+{{- end }}
+          - name: CBF_CONFIGURE
+            value: {{ .Values.ecconfigure }}
+{{- if and .Values.gateway.enabled .Values.gateway.pairedResourceName }}
+          - name: CBF_CREATE_EXTERNAL_GATEWAY
+            value: "true"
+          - name: CBF_EXTERNAL_GATEWAY_NAME
+            value: {{ .Values.gateway.name }}
+          - name: CBF_EXTERNAL_GATEWAY_INTERNAL_HOST_NAME
+            value: {{ .Values.releaseNamePrefix | default .Release.Name  }}-flow-agents
+          - name: CBF_EXTERNAL_GATEWAY_AGENT
+{{- if .Values.resourceName }}
+            value: {{ include "cloudbees-flow-agent.resourcename" . | quote }}
+{{- else }}
+            value: {{ .Values.releaseNamePrefix | default .Release.Name  }}
+{{- end }}
+          - name: CBF_DEFAULT_GATEWAY_AGENT
+            value: {{ .Values.gateway.pairedResourceName | default "gateway-default-agent" }}
+{{- end }}
+{{- if .Values.extraEnvs }}
+{{ toYaml .Values.extraEnvs | indent 10 }}
+{{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: 7800
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/opt/cbflow/health-check"]
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/bash", "/custom-scripts/custom-install.sh"]
+            preStop:
+              exec:
+                command: ["/bin/bash", "-c", "ectool --server $CBF_SERVER_HOST deleteResource $HOSTNAME"]
+          ports:
+          - containerPort: 7800
+            name: p4-agent
+            protocol: TCP
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+{{- if eq .Values.storage.volumes.agentWorkspace.accessMode "ReadWriteMany" }}
+          - name: {{ .Values.storage.volumes.agentWorkspace.name }}-shared
+{{- else }}
+          - name: {{ .Values.storage.volumes.agentWorkspace.name }}
+{{- end }}
+            mountPath: /workspace
+          - name: logback-config
+            mountPath: /custom-config/agent/logging-local.properties
+            subPath: agent-logback-config
+          - name: customscript-config
+            mountPath: /custom-scripts
+{{- if .Values.additionalVolumeMounts }}
+{{- toYaml .Values.additionalVolumeMounts | nindent 10 }}
+{{- end }}
+{{- if .Values.additionalContainers }}
+{{ toYaml .Values.additionalContainers | indent 8 }}
+{{- end }}
+      volumes:
+{{- if .Values.additionalVolumes }}
+{{- toYaml .Values.additionalVolumes | nindent 6}}
+{{- end }}
+      - name: logback-config
+        configMap:
+          name: "{{ .Values.releaseNamePrefix | default .Release.Name }}-logging-config"
+      - name: customscript-config
+        secret:
+          secretName: "{{ .Values.releaseNamePrefix | default .Release.Name  }}-customscript"
+      - name: {{ .Values.storage.volumes.agentWorkspace.name }}
+  {{- if eq .Values.storage.volumes.agentWorkspace.accessMode "ReadWriteMany" }}
+      - name: {{ .Values.storage.volumes.agentWorkspace.name }}-shared
+        persistentVolumeClaim:
+          claimName: {{ .Values.storage.volumes.agentWorkspace.name }}
+  {{- else }}
+  volumeClaimTemplates:
+    - metadata:
+        name: {{ .Values.storage.volumes.agentWorkspace.name }}
+      spec:
+        accessModes:
+          - {{ .Values.storage.volumes.agentWorkspace.accessMode | default "ReadWriteOnce" | quote }}
+        resources:
+          requests:
+            storage: "{{ .Values.storage.volumes.agentWorkspace.storage }}"
+              {{- if .Values.storage.volumes.agentWorkspace.storageClass }}
+              {{- if (eq "-"  .Values.storage.volumes.agentWorkspace.storageClass) }}
+        storageClassName: ""
+              {{- else }}
+        storageClassName: {{  .Values.storage.volumes.agentWorkspace.storageClass | quote }}
+              {{- end }}
+              {{- end }}
+  {{- end }}

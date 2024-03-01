@@ -1,0 +1,17 @@
+{{- $root := . }}
+{{ .Values.replicas }} CloudBees Flow agent{{ if gt (.Values.replicas | int) 1 }}s {{- end }}{{- if .Release.IsUpgrade }} upgraded.{{- else}} installed.{{- end }}
+
+Agent details:
+{{- if .Values.serverEndpoint }}
+  - Registered on Flow server: {{ .Values.serverEndpoint }}
+{{- end }}
+{{- if .Values.resourcePools}}
+  - Resource pool: {{ .Values.resourcePools }}
+{{- end }}
+{{- if .Values.serverEndpoint }}
+  - Resource name{{ if gt (.Values.replicas | int) 1 }}s{{ end }}: {{ if .Values.resourceName }}{{ include "cloudbees-flow-agent.resourcename.notes" . }}{{- else }}<resource name is not specified hostname will be used>{{- end }}
+{{- else }}
+  - Agent{{ if gt (.Values.replicas | int) 1 }}s{{ end }} to be registered as resources:
+{{ range $i, $e := until (.Values.replicas | int) }}    * {{ $root.Release.Name }}-flow-agent-{{$i}}.{{ $root.Release.Name }}-flow-agents.{{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}

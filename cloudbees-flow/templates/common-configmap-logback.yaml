@@ -1,0 +1,41 @@
+{{- if or .Values.server.enabled .Values.web.enabled .Values.repository.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flow-logging-config
+  labels:
+    app: cloudbees-flow
+    chart: cloudbees-flow
+data:
+{{- if .Values.server.enabled }}
+
+  server-logback-config: |
+      # logging-local.properties
+      #
+      # This file customizes the logging configuration of the CloudBees CD server.
+      #
+      # Statements are in the form <logger>=<level>, for example:
+      com.electriccloud={{ .Values.server.logLevel }}
+
+{{- end }}
+{{- if or .Values.web.enabled .Values.repository.enabled }}
+  agent-logback-config: |
+      # logging-local.properties
+      #
+      # This file customizes the logging configuration of the CloudBees CD agent.
+      #
+      # Statements are in the form <logger>=<level>, for example:
+      com.electriccloud.commander.agent={{ .Values.boundAgent.logLevel }}
+{{- end }}
+{{- if .Values.repository.enabled }}
+  repository-logback-config: |
+      # logging-local.properties
+      #
+      # This file customizes the logging configuration of the CloudBees CD repository
+      # server.
+      #
+      # Statements are in the form <logger>=<level>, for example:
+      com.electriccloud={{ .Values.repository.logLevel }}
+
+{{- end }}
+{{- end }}

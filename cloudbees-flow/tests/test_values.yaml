@@ -1,0 +1,10 @@
+# file contains test values of mandatory fields for the chart to work
+database:
+  existingSecret: db-secret
+  dbType: mysql
+  dbPort: 3306
+  dbName: dummy
+  externalEndpoint: db.host
+dois:
+  certificates:
+    bundle: cert.bundle

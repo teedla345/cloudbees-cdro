@@ -1,0 +1,10 @@
+apiVersion: {{.Values.batchApiVersion}}
+kind: CronJob
+metadata:
+  name: "{{ include "sidecar-injector.name" . | trunc 56 }}"
+  labels:
+{{ include "sidecar-injector-init.labels" . | indent 4 }}
+spec:
+  schedule: "0 0 */1 * *" # Once a day
+  jobTemplate:
+{{ include "sidecar-injector.init-job.spec" . | indent 4}}

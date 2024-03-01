@@ -1,0 +1,25 @@
+{{- if and .Values.repository.enabled .Values.repository.externalService.enabled  -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-repository-external
+  labels:
+    app: flow-repository
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- if .Values.repository.externalService.annotations }}
+  annotations:
+{{ toYaml .Values.repository.externalService.annotations | indent 4 }}
+{{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: ef-repository
+      port: 8200
+      protocol: TCP
+      targetPort: p3-repository
+  selector:
+    app: flow-repository
+    release: {{ .Release.Name }}
+{{- end }}

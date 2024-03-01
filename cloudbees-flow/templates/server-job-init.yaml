@@ -1,0 +1,271 @@
+{{- if .Values.clusteredMode -}}
+{{- if .Values.server.enabled -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flow-server-init-job
+{{ with .Values.jobInit.annotations }}
+  annotations:
+    {{ toYaml . | nindent 4 }}
+{{ end }}
+  labels:
+    app: flow-server
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{ toYaml .Values.customLabels | nindent 4 }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: flow-server
+        release: {{ .Release.Name }}
+{{ toYaml .Values.customLabels | nindent 8 }}
+    spec:
+{{ if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{ end }}
+      restartPolicy: Never
+{{ with .Values.jobInit.affinity }}
+      affinity:
+            {{ toYaml . | nindent 8 }}
+{{ end }}
+{{ with  .Values.jobInit.tolerations }}
+      tolerations:
+            {{ toYaml . | nindent 8 }}
+{{ end }}
+{{ if .Values.jobInit.nodeSelector }}
+      nodeSelector:
+            {{ toYaml .Values.jobInit.nodeSelector | nindent 8 }}
+{{ else }}
+      nodeSelector:
+        {{ include "os.label" . }}: linux
+{{ end }}
+      serviceAccountName: {{ include "cloudbees-flow.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 30
+{{- if and .Values.volumePermissions.enabled .Values.server.volumesPermissionsInitContainer.enabled }}
+      initContainers:
+      - name: volumes-permissions
+{{ if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.server.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.server.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /plugins-data
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          set -x
+          chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.fsGroup }} /plugins-data
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "128Mi"
+          requests:
+            cpu: "25m"
+            memory: "128Mi"
+{{- end }}
+      containers:
+      - name: flow-server
+{{ if .Values.global.cloudbees.imageRegistry }}
+        image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.server.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+        image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.server.imageRepository }}:{{ .Values.images.tag }}"
+{{ end }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+        env:
+        - name: CBF_ZK_CONNECTION
+          value: "{{ .Values.server.zk.host }}:{{ .Values.server.zk.port }}"
+        - name: CBF_SERVER_HOST
+          value: {{ required ".serverName is required for Flow server deployment" .Values.serverName | quote }}
+        - name: CBF_CONFIGURE
+          value: {{ .Values.server.ecconfigure }}
+        - name: CBF_CLUSTER_INIT
+          value: "true"
+{{ if and .Values.database.mysqlConnector.enabled .Values.database.mysqlConnector.externalUrl }}
+        - name: CBF_SERVER_MYSQL_CONNECTOR_URL
+          value: {{ .Values.database.mysqlConnector.externalUrl }}
+{{ else if not .Values.database.mysqlConnector.enabled }}
+        - name: CBF_SERVER_MYSQL_CONNECTOR_URL
+          value: "disable"
+{{ end }}
+        - name: CBF_SERVER_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+              name: {{ .Values.flowCredentials.existingSecret }}
+{{- else }}
+              name: {{ template "cloudbees-flow.fullname" . }}-credentials
+{{- end }}
+              key: CBF_SERVER_ADMIN_PASSWORD
+        - name: CBF_WEB_FQDN
+          value: {{ .Values.ingress.host | default .Values.web.service.name | quote }}
+{{- if not (has .Values.database.dbType (list "mysql" "oracle" "sqlserver" "postgresql")) }}
+{{ required ".database.dbType has to be one of mysql oracle sqlserver postgresql" .dbtype }}
+{{- end }}
+        - name: CBF_SERVER_SEND_TELEMETRY_DATA
+{{- if .Values.server.telemetryData.enabled }}
+          value: "true"
+{{- else }}
+          value: "false"
+{{- end }}
+        - name: CBF_DB_TYPE
+          value: {{ required ".database.dbType is required for flow database configuration" .Values.database.dbType | quote }}
+{{- if not .Values.database.customDatabaseUrl }}
+        - name: CBF_DB_HOST
+{{- if .Values.database.clusterEndpoint }}
+          value: {{ .Values.database.clusterEndpoint }}
+{{- else }}
+          value:  {{ .Release.Name }}-db
+{{- end }}
+{{- end }}
+        - name: CBF_DB_PORT
+          value:  {{ required ".database.dbPort is required for flow database configuration" .Values.database.dbPort | quote }}
+        - name: CBF_DB_NAME
+          value: {{ required ".database.dbName is required for flow database configuration" .Values.database.dbName | quote }}
+        - name: CBF_DB_USER
+          valueFrom:
+            secretKeyRef:
+{{- if .Values.database.existingSecret }}
+              name: {{ .Values.database.existingSecret }}
+{{- else }}
+              name: {{ template "cloudbees-flow.fullname" . }}-db
+{{- end }}
+              key: DB_USER
+        - name: CBF_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+{{- if .Values.database.existingSecret }}
+              name: {{ .Values.database.existingSecret }}
+{{- else }}
+              name: {{ template "cloudbees-flow.fullname" . }}-db
+{{- end }}
+              key: DB_PASSWORD
+{{ if .Values.database.customDatabaseUrl }}
+        - name: CBF_DB_CUSTOM_URL
+          value: {{ .Values.database.customDatabaseUrl }}
+{{ end }}
+
+{{- if .Values.sda }}
+{{- if .Values.ingress.host }}
+        - name: CBF_OC_URL
+{{- if or .Values.ingress.certificate.existingSecret .Values.ingress.certificate.crt  }}
+          value: https://{{ .Values.ingress.host }}/cjoc/
+{{- else }}
+          value: http://{{ .Values.ingress.host }}/cjoc/
+{{- end }}
+{{- end }}
+        - name: CBF_SERVER_SDA_MODE
+          value: "true"
+{{- end }}
+{{- if .Values.gitops.enabled }}
+        - name: CBF_GITOPS_ENABLED
+          value: "true"
+        - name: CBF_GIT_TOKEN
+          valueFrom:
+            secretKeyRef:
+{{- if .Values.gitops.existingSecret }}
+              name: {{ .Values.gitops.existingSecret }}
+{{- else }}
+              name: {{ template "cloudbees-flow.fullname" . }}-gitops
+{{- end }}
+              key: CBF_GIT_TOKEN
+
+{{- end }}
+{{- if .Values.server.extraEnvs }}
+{{ toYaml .Values.server.extraEnvs | indent 8 }}
+{{- end }}
+        livenessProbe:
+          exec:
+            command: ["/opt/cbflow/health-check"]
+          initialDelaySeconds: {{ .Values.jobInit.livenessProbe.initialDelaySeconds | default 60 }}
+          periodSeconds: {{ .Values.jobInit.livenessProbe.periodSeconds | default 60 }}
+          timeoutSeconds: {{ .Values.jobInit.livenessProbe.timeoutSeconds | default 10 }}
+
+        ports:
+        - containerPort: 8000
+          name: p1-chttp
+          protocol: TCP
+        - containerPort: 8443
+          name: p6-jettys
+          protocol: TCP
+{{- if eq .Values.securityContext.enabled true }}
+        securityContext:
+          {{ toYaml .Values.containerSecurityContext | nindent 10 }}
+{{- end }}
+        resources:
+{{ toYaml .Values.server.resources | indent 10 }}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - name: plugins-volume
+          mountPath: /plugins-data
+        - name: logback-config
+          mountPath: /custom-config/logback-local.groovy
+          subPath: server-logback-config
+        - name: init-scripts
+          mountPath: /custom-config/startup.sh
+          subPath: startup.sh
+        - name: customscript-config
+          mountPath: /custom-scripts
+        - name: init-scripts
+          mountPath: /custom-config/startup-serverup.sh
+          subPath: startup-serverup.sh
+        - name: init-scripts
+          mountPath: /opt/cbflow/server/setup/01_setupRemoteRepository.pl
+          subPath: register_repo.pl
+        - name: init-scripts
+          mountPath: /custom-config/ScmSync.groovy
+          subPath: ScmSync.groovy
+{{- if or .Values.flowLicense.licenseData .Values.flowLicense.existingSecret }}
+        - name: license
+          mountPath: /custom-config/license.xml
+          subPath: CBF_LICENSE
+{{- end }}
+        {{- range $key, $value := $.Values.server.customConfig }}
+        - name: custom-config-files
+          mountPath: /custom-config/{{ $key }}
+          subPath: {{ $key }}
+        {{- end }}
+{{- if .Values.server.additionalContainers }}
+{{ toYaml .Values.server.additionalContainers | indent 6 }}
+{{- end }}
+      volumes:
+      - name: plugins-volume
+        persistentVolumeClaim:
+          claimName: {{ .Values.storage.volumes.serverPlugins.name }}
+      - name: logback-config
+        configMap:
+          name: flow-logging-config
+      - name: customscript-config
+        secret:
+          secretName: "{{ .Release.Name }}-customscript"
+      - name: init-scripts
+        configMap:
+          name: flow-init-scripts
+{{- if or .Values.flowLicense.licenseData .Values.flowLicense.existingSecret }}
+      - name: license
+        secret:
+{{- if .Values.flowLicense.existingSecret }}
+          secretName: {{ .Values.flowLicense.existingSecret }}
+{{- else }}
+          secretName: {{ template "cloudbees-flow.fullname" . }}-license
+{{- end }}
+{{- end }}
+{{- if .Values.server.customConfig }}
+      - name: custom-config-files
+        secret:
+          secretName: flow-server-custom-config-files
+{{- end }}
+{{- end }}
+{{- end }}

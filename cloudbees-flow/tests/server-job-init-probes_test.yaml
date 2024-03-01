@@ -1,0 +1,52 @@
+suite: CD Server Init Job liveness probes Tests
+templates:
+  - server-job-init.yaml
+values:
+  - enable-cluster.yaml
+tests:
+  - it: default values test
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 10
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+
+  - it: user can set liveness probes
+    set:
+      jobInit:
+        livenessProbe:
+          initialDelaySeconds: 101
+          periodSeconds: 11
+          timeoutSeconds: 6
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 101
+            periodSeconds: 11
+            timeoutSeconds: 6
+
+  - it: manifest has liveness probes if setting is empty in values file
+    set:
+      jobInit:
+        livenessProbe: {}
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            timeoutSeconds: 10

@@ -1,0 +1,324 @@
+suite: CD DOIS StatefulSet Tests
+templates:
+  - dois-stateful-set.yaml
+tests:
+  - it: StatefulSet document generation and mandatory values check
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /elasticsearch-data
+
+  - it: CBF_DOIS_ES_DISCOVERY_HOSTS variable was generated properly
+    set:
+      dois.replicas: 2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_DOIS_ES_DISCOVERY_HOSTS
+            value: flow-devopsinsight-0.flow-devopsinsight,flow-devopsinsight-1.flow-devopsinsight
+
+# initContainers Image tests
+  - it: initContainers image is modified properly
+    set:
+      dois:
+        sysctlInitContainer:
+          imageRepository: testRepo
+          imageTag: testTag
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: testRepo:testTag
+
+# Image tests
+  - it: should create DOIS StatefulSet with the values from `global.cloudbees` section if specified
+    set:
+      global.cloudbees:
+        imageRegistry: global-test-registry.test
+        imageTag: global-test-tag
+      # Values from flow cloudbees-flow chart images section
+      images:
+        registry: chart-images-registry.test
+        tag: chart-images-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: global-test-registry.test/cbflow-dois:global-test-tag
+
+  - it: should create DOIS StatefulSet with the values on `images` section if `global.cloudbees` section is not specified
+    set:
+      global.cloudbees: { }
+        # Values from flow cloudbees-flow chart images section
+      images:
+        registry: chart-images-registry.test
+        tag: chart-images-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: chart-images-registry.test/cbflow-dois:chart-images-tag
+
+  - it: should create DOIS StatefulSet with the values from `images` section if `global.cloudbees` is empty
+    set:
+      global.cloudbees:
+        imageRegistry:
+        imageTag:
+      # Values from flow cloudbees-flow chart images section
+      images:
+        registry: chart-images-registry.test
+        tag: chart-images-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value:  chart-images-registry.test/cbflow-dois:chart-images-tag
+
+  - it: should create DOIS StatefulSet with the image from dois.imageRepository
+    set:
+      global.cloudbees:
+        imageRegistry:
+        imageTag:
+      images:
+        registry: chart-images-registry.test
+        tag: chart-images-tag
+      dois:
+        imageRepository: custom-cbflow-dois
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: chart-images-registry.test/custom-cbflow-dois:chart-images-tag
+
+# Security Context tests
+  - it: securityContext doesn't exist by default
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: metadata.name
+          value: flow-devopsinsight
+      - notExists:
+          path: spec.template.spec.securityContext
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: User can enable podSecurityContext
+    set:
+      securityContext:
+        enabled: true
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value: { }
+
+  - it: User can set podSecurityContext
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 10001
+        fsGroupChangePolicy: "OnRootMismatch"
+        runAsGroup: 10002
+        runAsNonRoot: true
+        runAsUser: 10003
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+        supplementalGroups: [ 10005, 10006 ]
+        sysctls:
+          - name: net.core.somaxconn
+            value: "1024"
+          - name: net.ipv4.tcp_syncookies
+            value: "1"
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            fsGroupChangePolicy: "OnRootMismatch"
+            runAsGroup: 10002
+            runAsNonRoot: true
+            runAsUser: 10003
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+
+  - it: User can set containerSecurityContext
+    set:
+      securityContext:
+        enabled: true
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ "ALL" ]
+        privileged: false
+        procMount: "Default"
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10004
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsUser: 1000
+            fsGroup: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set podSecurityContext and containerSecurityContext
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 10001
+        runAsUser: 10002
+        runAsNonRoot: true
+        fsGroupChangePolicy: "OnRootMismatch"
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+        supplementalGroups: [ 10005, 10006 ]
+        sysctls:
+          - name: net.core.somaxconn
+            value: "1024"
+          - name: net.ipv4.tcp_syncookies
+            value: "1"
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ "ALL" ]
+        privileged: false
+        procMount: "Default"
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10004
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            runAsUser: 10002
+            runAsNonRoot: true
+            fsGroupChangePolicy: "OnRootMismatch"
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set securityContext runAsUser=0
+    set:
+      securityContext:
+        enabled: true
+        runAsUser: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 1000
+            runAsUser: 0
+
+  - it: User can set securityContext fsGroup=0
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 0
+            runAsUser: 1000

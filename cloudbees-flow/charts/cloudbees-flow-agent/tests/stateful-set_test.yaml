@@ -1,0 +1,263 @@
+suite: Agent StatefulSet Tests
+templates:
+  - stateful-set.yaml
+tests:
+  - it: should create a StatefulSet by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+
+  - it: should create a StatefulSet with the specified name
+    set:
+      releaseNamePrefix: test
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-flow-agent
+      - equal:
+          path: metadata.labels.app
+          value: test-flow-agent
+
+  - it: should create a StatefulSet with the specified replicas
+    set:
+      replicas: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: should create a StatefulSet with the specified podManagementPolicy
+    set:
+      podManagementPolicy: Parallel
+    asserts:
+      - equal:
+          path: spec.podManagementPolicy
+          value: Parallel
+
+  - it: should create a StatefulSet with the specified nodeSelector
+    set:
+      nodeSelector:
+        label: nodeLabel
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.label
+          value: nodeLabel
+
+  - it: should create a StatefulSet with the specified toleration's
+    set:
+      tolerations:
+        - key: key
+          operator: Equal
+          value: value
+          effect: NoSchedule
+    asserts:
+        - equal:
+            path: spec.template.spec.tolerations[0].key
+            value: key
+        - equal:
+            path: spec.template.spec.tolerations[0].operator
+            value: Equal
+        - equal:
+            path: spec.template.spec.tolerations[0].value
+            value: value
+        - equal:
+            path: spec.template.spec.tolerations[0].effect
+            value: NoSchedule
+
+  - it: should create a StatefulSet with the specified affinity
+    set:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: key
+                    operator: Equal
+                    values:
+                      - value
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: key
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: Equal
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]
+          value: value
+
+## Environment variables tests
+
+# Default values
+  - it: should create a StatefulSet with the default environment variables if not specified
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_SERVER_HOST
+            value: flow-server
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_SERVER_USER
+            valueFrom:
+              secretKeyRef:
+                key: CBF_SERVER_USER
+                # value from file ./test_values.yaml
+                name: dummy-secret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_SERVER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: CBF_SERVER_PASSWORD
+                # value from file ./test_values.yaml
+                name: dummy-secret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: K8S_SERVICE_NAME
+            value: RELEASE-NAME-flow-agents.NAMESPACE
+      - contains:
+            path: spec.template.spec.containers[0].env
+            content:
+              name: CBF_CONFIGURE
+              value: --agentInitMemoryMB=16 --agentMaxMemoryMB=64
+
+# Custom values
+  - it: should create a StatefulSet with the specified trustedAgent
+    set:
+      trustedAgent: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "true"
+
+  - it: should create a StatefulSet with the specified serverHost
+    set:
+      serverHost: testServer
+      asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+              name: CBF_SERVER_HOST
+              value: testServer
+
+  - it: should create a StatefulSet with the specified ecconfigure
+    set:
+      ecconfigure: "--agentInitMemoryMB=32 --agentMaxMemoryMB=128"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_CONFIGURE
+            value: --agentInitMemoryMB=32 --agentMaxMemoryMB=128
+
+# Additional values
+
+  - it: should create a StatefulSet with the specified resourcePools
+    set:
+      resourcePools:
+        - pool1
+        - pool2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_RESOURCE_POOLS
+            value: '[pool1 pool2]'
+
+  - it: should create a StatefulSet with the specified zoneName
+    set:
+      zoneName: testZone
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_ZONE_NAME
+            value: testZone
+
+  - it: should create a StatefulSet with the specified workspaceName
+    set:
+      workspaceName: testWs
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_WORKSPACE_NAME
+            value: testWs
+
+  - it: should create a StatefulSet with the specified resourceType
+    set:
+      resourceType: concurrent
+    asserts:
+        - contains:
+            path: spec.template.spec.containers[0].env
+            content:
+              name: CBF_RESOURCE_TYPE
+              value: concurrent
+
+  - it: should create a StatefulSet with the specified resourceName
+    set:
+      resourceName: "myResource-{{ .Release.Name }}-{{ ordinalIndex }}"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_RESOURCE_NAME
+            value: myResource-RELEASE-NAME-^@ordinalIndex@^
+
+# Image tests
+  - it: should create a StatefulSet with the specified images on `images` section
+    set:
+      images:
+        registry: images-test-registry.com
+        imageRepository: images-cloudbees-flow-agent
+        tag: images-test-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: images-test-registry.com/images-cloudbees-flow-agent:images-test-tag
+
+  - it: should create a StatefulSet with the specified images on `global.cloudbees` section
+    set:
+      global.cloudbees:
+        imageRegistry: global-test-registry.com/cloudbees
+        imageTag: global-test-tag
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: global-test-registry.com/cloudbees/cbflow-agent:global-test-tag
+
+  - it: should create a StatefulSet with the default imageRegistry if not specified
+    set:
+      images:
+        tag: test
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/cloudbees/cbflow-agent:test
+
+  - it: should create a StatefulSet with the global values if specified both `images` and `global.cloudbees` sections
+    set:
+      global.cloudbees:
+        imageRegistry: global-registry.com/cloudbees
+        imageTag: global-test-tag
+      images:
+        registry: images-registry.com
+        tag: images-tag
+    asserts:
+        - equal:
+            path: spec.template.spec.containers[0].image
+            value: global-registry.com/cloudbees/cbflow-agent:global-test-tag
+

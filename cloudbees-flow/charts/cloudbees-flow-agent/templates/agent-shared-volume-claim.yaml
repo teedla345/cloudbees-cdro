@@ -1,0 +1,15 @@
+{{- if eq .Values.storage.volumes.agentWorkspace.accessMode "ReadWriteMany" -}}
+{{- if not .Values.storage.volumes.agentWorkspace.existingClaim -}}
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .Values.storage.volumes.agentWorkspace.name }}
+spec:
+  accessModes:
+    - {{ .Values.storage.volumes.agentWorkspace.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.volumes.agentWorkspace.storage }}
+  storageClassName: {{ .Values.storage.volumes.agentWorkspace.storageClass }}
+{{- end -}}
+{{- end -}}

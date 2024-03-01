@@ -1,0 +1,4 @@
+externalGatewayAgent:
+  enabled: true
+internalGatewayAgent:
+  enabled: true

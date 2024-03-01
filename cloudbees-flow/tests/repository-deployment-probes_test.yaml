@@ -1,0 +1,85 @@
+suite: CD Repository Deployment liveness and readiness probes Tests
+templates:
+  - repository-deployment.yaml
+tests:
+  - it: default values test
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe
+          value:
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+            tcpSocket:
+              port: 8200
+
+  - it: user can set liveness and readiness probes
+    set:
+      repository:
+        livenessProbe:
+          initialDelaySeconds: 101
+          periodSeconds: 11
+          timeoutSeconds: 6
+          failureThreshold: 4
+        readinessProbe:
+          initialDelaySeconds: 61
+          periodSeconds: 6
+          timeoutSeconds: 6
+          failureThreshold: 4
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 101
+            periodSeconds: 11
+            timeoutSeconds: 6
+            failureThreshold: 4
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe
+          value:
+            initialDelaySeconds: 61
+            periodSeconds: 6
+            timeoutSeconds: 6
+            failureThreshold: 4
+            tcpSocket:
+              port: 8200
+
+  - it: manifest has liveness and readiness probes if setting is empty in values file
+    set:
+      repository:
+        livenessProbe: {}
+        readinessProbe: {}
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe
+          value:
+            exec:
+              command:
+                - /opt/cbflow/health-check
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe
+          value:
+            initialDelaySeconds: 120
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+            tcpSocket:
+              port: 8200

@@ -1,0 +1,37 @@
+suite: Agent External Service Tests
+templates:
+  - service-external.yaml
+tests:
+  - it: User can enable and set annotations to service-external
+    set:
+      externalService:
+        enabled: true
+        annotations:
+          foo/bar: someValue
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Service }
+      - equal:
+          path: metadata.annotations["foo/bar"]
+          value: someValue
+
+  - it: User can set port to service-external
+    set:
+      externalService:
+        enabled: true
+        port: 1234
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Service }
+      - equal:
+          path: spec.ports[0].port
+          value: 1234
+
+  - it: The user cannot create an external service if it is not enabled
+    set:
+      externalService:
+        annotations:
+          foo/bar: someValue
+          port: 1234
+    asserts:
+      - hasDocuments: { count: 0 }

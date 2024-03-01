@@ -1,0 +1,3 @@
+# file contains test values of mandatory fields for the chart to work
+flowCredentials:
+  existingSecret: dummy-secret

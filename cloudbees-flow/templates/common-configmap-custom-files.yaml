@@ -1,0 +1,14 @@
+{{- if and .Values.server.enabled .Values.server.customConfig -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: flow-server-custom-config-files
+  labels:
+    app: cloudbees-flow
+    chart: cloudbees-flow
+type: Opaque
+data:
+  {{- range $key, $value := $.Values.server.customConfig }}
+    "{{ $key }}": "{{ $value |  b64enc }}"
+  {{- end }}
+{{- end }}

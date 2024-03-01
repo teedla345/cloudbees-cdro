@@ -1,0 +1,29 @@
+{{- if .Values.server.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-server
+  labels:
+    app: flow-server
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: servicep1-chttp
+      port: 8000
+      protocol: TCP
+      targetPort: p1-chttp
+    - name: servicep1-stomp
+      port: 61613
+      protocol: TCP
+      targetPort: p1-stomp
+    - name: servicep6jettys
+      port: 8443
+      protocol: TCP
+      targetPort: p6-jettys
+  selector:
+    app: flow-server
+    release: {{ .Release.Name }}
+{{ end }}

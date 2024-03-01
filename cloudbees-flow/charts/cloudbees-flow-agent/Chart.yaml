@@ -1,0 +1,8 @@
+apiVersion: v2
+appVersion: 2023.12.0.171596
+description: A Helm chart for CloudBees Flow Agent
+keywords:
+- cloudbees-flow-agent
+name: cloudbees-flow-agent
+type: application
+version: 2.28.0

@@ -1,0 +1,54 @@
+annotations:
+  artifacthub.io/links: |
+    - name: Product overview
+      url: https://www.cloudbees.com/products/continuous-delivery
+    - name: Documentation
+      url: https://docs.cloudbees.com/docs/cloudbees-cd/latest/
+apiVersion: v2
+appVersion: 2023.12.0.171596
+dependencies:
+- alias: mariadb
+  condition: mariadb.enabled
+  name: mariadb
+  repository: ""
+  version: 7.0.1
+- alias: zookeeper
+  condition: clusteredMode
+  name: zookeeper
+  repository: ""
+  version: 2.1.1
+- condition: nginx-ingress.enabled
+  name: nginx-ingress
+  repository: https://charts.helm.sh/stable
+  version: 1.25.0
+- alias: externalGatewayAgent
+  condition: externalGatewayAgent.enabled
+  name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+- alias: internalGatewayAgent
+  condition: internalGatewayAgent.enabled
+  name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+- alias: cdsidecarinjector
+  condition: cdsidecarinjector.enabled
+  name: cloudbees-sidecar-injector
+  repository: https://charts.cloudbees.com/public/cloudbees
+  version: 2.2.1
+- condition: ingress-nginx.enabled
+  name: ingress-nginx
+  repository: https://kubernetes.github.io/ingress-nginx
+  version: 4.0.13
+- alias: boundAgent
+  name: cloudbees-flow-agent
+  repository: ""
+  version: "2"
+description: A Helm chart for CloudBees Flow
+home: https://www.cloudbees.com/products/continuous-delivery
+keywords:
+- cloudbees-flow
+- cloudbees-cd
+name: cloudbees-flow
+type: application
+version: 2.28.0

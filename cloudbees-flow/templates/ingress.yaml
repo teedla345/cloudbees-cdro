@@ -1,0 +1,84 @@
+{{- if and .Values.ingress.enabled (not (include "cloudbees-flow.is-openshift" .)) -}}
+apiVersion: {{ include "cloudbees-flow-ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: flow-ingress
+  labels:
+    app: flow
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+  annotations:
+{{ include "cloudbees-flow-ingress.annotations" . | indent 4 }}
+spec:
+{{- if and (eq (include "cloudbees-flow-ingress.apiVersion" .) "networking.k8s.io/v1") ( not (index .Values "nginx-ingress" "enabled" )) }}
+  ingressClassName: {{ .Values.ingress.class }}
+{{- end }}
+{{- if or .Values.ingress.certificate.existingSecret .Values.ingress.certificate.crt  }}
+{{- if .Values.ingress.host }}
+  tls:
+    - hosts:
+      - {{ .Values.ingress.host }}
+{{- if .Values.ingress.certificate.existingSecret }}
+      secretName: {{ .Values.ingress.certificate.existingSecret | quote }}
+{{- else if and .Values.ingress.certificate.crt .Values.ingress.certificate.key }}
+      secretName: "flow-tls-secret"
+{{- end }}
+{{- end }}
+{{- end }}
+  rules:
+    - host: {{ .Values.ingress.host}}
+{{- if .Values.web.enabled }}
+{{- if .Values.sda }}
+      http:
+        paths:
+        - path: /flow
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /flow/*
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /commander
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /commander/*
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /auth
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /auth/*
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /rest
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+        - path: /rest/*
+{{ include "cloudbees-flow-ingress.pathType" . | indent 10 }}
+          backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 12 }}
+{{- else }}
+      http:
+        paths:
+          - path: /
+{{ include "cloudbees-flow-ingress.pathType" . | indent 12 }}
+            backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 14 -}}
+{{- if or (ne (include "cloudbees-flow-ingress.apiVersion" .) "networking.k8s.io/v1") (eq .Values.platform "eks") }}
+          - path: /*
+{{ include "cloudbees-flow-ingress.pathType" . | indent 12 }}                    
+            backend:
+{{ include "cloudbees-flow-ingress.backend" . | indent 14 -}}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+

@@ -1,0 +1,25 @@
+{{- if .Values.web.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-web
+  labels:
+    app: flow-web
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: {{ .Values.web.service.type }}
+  ports:
+    - name: httpefwebserver
+      port: 80
+      protocol: TCP
+      targetPort: 2080
+    - name: httpsefwebserver
+      port: 443
+      protocol: TCP
+      targetPort: 2443
+  selector:
+    app: flow-web
+    release: {{ .Release.Name }}
+{{ end }}

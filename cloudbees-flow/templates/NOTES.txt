@@ -1,0 +1,73 @@
+{{/* Flow Server */}}
+{{- if .Values.server.enabled }}
+- CloudBees Flow Server was successfully deployed {{- if or ( index .Values "nginx-ingress" "enabled" ) ( index .Values "ingress-nginx" "enabled" ) }} {{- if .Values.ingress.host }} and is available at https://{{ $.Values.ingress.host }}:8443
+{{- else}}
+  Find access point using:
+  {{- if  index .Values "ingress-nginx" "enabled" }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- else   }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- end }}
+  echo "Available at: https://$LB_HOSTNAME:8443/" or echo "Available at: https://$LB_HOSTIP:8443/"
+{{- end }}
+  Username: admin
+{{- end }}
+{{- end }}
+{{/* Flow Web */}}
+{{- if .Values.web.enabled }}
+- CloudBees Flow Web was successfully deployed {{- if .Values.ingress.enabled }} {{- if .Values.ingress.host }} and is available at https://{{ $.Values.ingress.host }}
+{{- else}}
+  Find access point using:
+  {{- if index .Values "ingress-nginx" "enabled" }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- else   }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- end }}
+  echo "Available at: https://$LB_HOSTNAME/"  or echo "Available at: https://$LB_HOSTIP/"
+{{- end }}
+  Username: admin
+
+{{ if not .Values.flowCredentials.existingSecret }}
+
+  Password:  Get your admin user password by running:
+             kubectl get secret --namespace {{ .Release.Namespace }} {{ template "cloudbees-flow.fullname" . }}-credentials -o jsonpath="{.data.CBF_SERVER_ADMIN_PASSWORD}" | base64 --decode; echo
+{{- end }}
+{{- end }}
+{{- end }}
+{{/* Flow DOIS */}}
+{{- if .Values.dois.enabled }}
+- CloudBees Flow Devops Insight was successfully deployed {{- if or ( index .Values "nginx-ingress" "enabled" ) ( index .Values "ingress-nginx" "enabled" ) }} {{- if .Values.ingress.host }} and is available at:
+  Elasticsearch endpoint: https://{{ $.Values.ingress.host }}:9200
+{{- else}}
+  Find access point using:
+  {{- if index .Values "ingress-nginx" "enabled" }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- else   }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- end }}
+  echo "Elasticsearch endpoint: https://$LB_HOSTNAME:9200" or echo "Elasticsearch endpoint: https://$LB_HOSTIP:9200"
+{{- end }}
+{{- end }}
+{{- end }}
+{{/* Flow Repository */}}
+{{- if .Values.repository.enabled }}
+- CloudBees Flow Repository was successfully deployed {{- if or ( index .Values "nginx-ingress" "enabled" ) ( index .Values "ingress-nginx" "enabled" ) }} {{- if .Values.ingress.host }} and is available at https://{{ $.Values.ingress.host }}:8200
+{{- else}}
+  Find access point using:
+  {{- if  index .Values "ingress-nginx" "enabled" }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-ingress-nginx-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- else   }}
+  LB_HOSTNAME=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+  LB_HOSTIP=$(kubectl get service {{ .Release.Name }}-nginx-ingress-controller -n {{ .Release.Namespace }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+  {{- end }}
+  echo "Available at: https://$LB_HOSTNAME:8200" or echo "Available at: https://$LB_HOSTIP:8200"
+{{- end }}
+{{- end }}
+{{- end }}

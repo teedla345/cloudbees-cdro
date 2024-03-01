@@ -1,0 +1,33 @@
+{{- if and .Values.server.enabled  .Values.server.externalService.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-server-external
+  labels:
+    app: flow-server
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- if .Values.server.externalService.annotations }}
+  annotations:
+{{ toYaml .Values.server.externalService.annotations | indent 4 }}
+{{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: servicep1-stomp
+      port: 61613
+      protocol: TCP
+      targetPort: p1-stomp
+    - name: servicep6jettys
+      port: 8443
+      protocol: TCP
+      targetPort: p6-jettys
+    - name: servicep1-chttp
+      port: 8000
+      protocol: TCP
+      targetPort: p1-chttp
+  selector:
+    app: flow-server
+    release: {{ .Release.Name }}
+{{ end }}

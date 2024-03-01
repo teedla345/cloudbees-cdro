@@ -1,0 +1,134 @@
+suite: Agent Configurations Tests
+templates:
+  - stateful-set.yaml
+tests:
+  - it: agent should use specified zone name
+    set:
+      zoneName: testZone
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_WORKSPACE_NAME
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_ZONE_NAME
+            value: testZone
+
+  - it: agent should use specified workspace name
+    set:
+      workspaceName: testWs
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_ZONE_NAME
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_WORKSPACE_NAME
+            value: testWs
+
+  - it: agent should not be a trusted agent by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "false"
+
+  - it: agent should be configured as trusted agent if set to true
+    set:
+      trustedAgent: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "true"
+
+  - it: agent should be configured as trusted agent if set to 1
+    set:
+      trustedAgent: 1
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "true"
+
+  - it: agent should not be configured as trusted agent if set to 0
+    set:
+      trustedAgent: 0
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_TRUSTED_AGENT
+            value: "false"
+
+  - it: agent should use specified resource type
+    set:
+      resourceType: concurrent
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_RESOURCE_TYPE
+            value: concurrent
+
+  - it: agent should not set resource type by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CBF_RESOURCE_TYPE
+
+  - it: agent should use specified env variable
+    set:
+      extraEnvs:
+        - name: TEST_ENV
+          value: testValue
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TEST_ENV
+            value: testValue

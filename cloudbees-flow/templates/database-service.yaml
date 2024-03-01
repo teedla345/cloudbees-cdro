@@ -1,0 +1,27 @@
+{{- if .Values.server.enabled -}}
+{{- if not .Values.database.customDatabaseUrl -}}
+{{ if not (or .Values.database.externalEndpoint .Values.database.clusterEndpoint) }}
+{{ required "Either of .database.externalEndpoint or .database.clusterEndpoint has to be specified and available for Flow server to run" .dbEndpoint }}
+{{ end }}
+{{ if .Values.database.externalEndpoint  }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-db
+  labels:
+    app: cloudbees-flow-external-db
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: ExternalName
+  externalName: "{{ .Values.database.externalEndpoint }}"
+  ports:
+    - name: externaldbport
+      protocol: TCP
+      port: {{ .Values.database.dbPort | default "3306" }}
+      targetPort: {{ .Values.database.dbPort | default "3306" }}
+  selector: {}
+{{- end }}
+{{- end }}
+{{- end }}

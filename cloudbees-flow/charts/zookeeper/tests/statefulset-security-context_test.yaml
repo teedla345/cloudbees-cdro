@@ -1,0 +1,244 @@
+suite: Zookeeper StatefulSet Tests
+templates:
+  - statefulset.yaml
+tests:
+  - it: securityContext is enabled and has value 1000 by default
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-zookeeper
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsUser: 1000
+            fsGroup: 1000
+
+  - it: containerSecurityContext is empty by default
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value: { }
+
+  - it: user can disable securityContext
+    set:
+      securityContext:
+        enabled: false
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-zookeeper
+      - notExists:
+          path: spec.template.spec.securityContext
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: User can set podSecurityContext
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 10001
+        fsGroupChangePolicy: "OnRootMismatch"
+        runAsGroup: 10002
+        runAsNonRoot: true
+        runAsUser: 10003
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+        supplementalGroups: [ 10005, 10006 ]
+        sysctls:
+          - name: net.core.somaxconn
+            value: "1024"
+          - name: net.ipv4.tcp_syncookies
+            value: "1"
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            fsGroupChangePolicy: "OnRootMismatch"
+            runAsGroup: 10002
+            runAsNonRoot: true
+            runAsUser: 10003
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+
+  - it: User can set containerSecurityContext
+    set:
+      securityContext:
+        enabled: true
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ "ALL" ]
+        privileged: false
+        procMount: "Default"
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10004
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsUser: 1000
+            fsGroup: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set podSecurityContext and containerSecurityContext
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 10001
+        runAsUser: 10002
+        runAsNonRoot: true
+        fsGroupChangePolicy: "OnRootMismatch"
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+        supplementalGroups: [ 10005, 10006 ]
+        sysctls:
+          - name: net.core.somaxconn
+            value: "1024"
+          - name: net.ipv4.tcp_syncookies
+            value: "1"
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ "ALL" ]
+        privileged: false
+        procMount: "Default"
+        readOnlyRootFilesystem: true
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10004
+        seLinuxOptions:
+          level: s0:c123,c456
+          role: role1
+          type: type1
+          user: user1
+        seccompProfile:
+          type: RuntimeDefault
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 10001
+            runAsUser: 10002
+            runAsNonRoot: true
+            fsGroupChangePolicy: "OnRootMismatch"
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+            supplementalGroups: [ 10005, 10006 ]
+            sysctls:
+              - name: net.core.somaxconn
+                value: "1024"
+              - name: net.ipv4.tcp_syncookies
+                value: "1"
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ "ALL" ]
+            privileged: false
+            procMount: "Default"
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10004
+            seLinuxOptions:
+              level: s0:c123,c456
+              role: role1
+              type: type1
+              user: user1
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: User can set securityContext runAsUser=0
+    set:
+      securityContext:
+        enabled: true
+        runAsUser: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 1000
+            runAsUser: 0
+
+  - it: User can set securityContext fsGroup=0
+    set:
+      securityContext:
+        enabled: true
+        fsGroup: 0
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: StatefulSet }
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 0
+            runAsUser: 1000

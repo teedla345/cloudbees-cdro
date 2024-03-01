@@ -1,0 +1,23 @@
+{{- if .Values.repository.enabled -}}
+{{- if not .Values.storage.volumes.repositoryStorage.existingClaim -}}
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: "{{ .Values.storage.volumes.repositoryStorage.name }}"
+spec:
+  accessModes:
+    - {{ .Values.storage.volumes.repositoryStorage.accessMode | default "ReadWriteOnce" | quote }}
+  resources:
+    requests:
+      storage: "{{ .Values.storage.volumes.repositoryStorage.storage }}"
+      {{- if .Values.storage.volumes.repositoryStorage.storageClass }}
+      {{- if (eq "-" .Values.storage.volumes.repositoryStorage.storageClass) }}
+  storageClassName: ""
+      {{- else }}
+  storageClassName: {{ .Values.storage.volumes.repositoryStorage.storageClass | quote }}
+      {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}

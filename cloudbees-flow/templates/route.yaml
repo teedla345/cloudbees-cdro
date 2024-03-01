@@ -1,0 +1,132 @@
+{{- if and .Values.ingress.enabled (include "cloudbees-flow.is-openshift" .) -}}
+{{- if .Values.sda }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: flow-web
+  labels:
+    app: flow-web
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host | quote }}
+{{- end }}
+  path: "/flow"
+  to:
+    kind: Service
+    name: flow-web
+    weight: 100
+  port:
+    targetPort: httpefwebserver
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: flow-commander
+  labels:
+    app: flow-commander
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host | quote }}
+{{- end }}
+  path: "/commander"
+  to:
+    kind: Service
+    name: flow-web
+    weight: 100
+  port:
+    targetPort: httpefwebserver
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: flow-rest
+  labels:
+    app: flow-rest
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host | quote }}
+{{- end }}
+  path: "/rest"
+  to:
+    kind: Service
+    name: flow-web
+    weight: 100
+  port:
+    targetPort: httpefwebserver
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: flow-auth
+  labels:
+    app: flow-auth
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host | quote }}
+{{- end }}
+  path: "/auth"
+  to:
+    kind: Service
+    name: flow-web
+    weight: 100
+  port:
+    targetPort: httpefwebserver
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+{{- else }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: flow
+  labels:
+    app: flow
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+{{- if .Values.ingress.host }}
+  host: {{ .Values.ingress.host | quote }}
+{{- end }}
+  to:
+    kind: Service
+    name: flow-web
+    weight: 100
+  port:
+    targetPort: httpefwebserver
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

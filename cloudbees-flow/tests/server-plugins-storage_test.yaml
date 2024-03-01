@@ -1,0 +1,41 @@
+suite: CD Server Plugins PVC Tests
+templates:
+  - common-volume-claim-plugin-storage.yaml
+tests:
+  - it: server should use default storage
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteMany
+      - equal:
+          path: metadata.name
+          value: flow-server-shared
+      - equal:
+          path: spec.resources.requests.storage
+          value: 5Gi
+
+  - it: server should use specified storage class
+    set:
+      storage.volumes.serverPlugins.storageClass: awsStorage
+      storage.volumes.serverPlugins.storage: 6Gi
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteMany
+      - equal:
+          path: metadata.name
+          value: flow-server-shared
+      - equal:
+          path: spec.resources.requests.storage
+          value: 6Gi
+      - equal:
+          path: spec.storageClassName
+          value: awsStorage

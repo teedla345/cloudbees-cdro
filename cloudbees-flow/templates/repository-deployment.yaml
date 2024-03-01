@@ -1,0 +1,180 @@
+{{- if .Values.repository.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flow-repository
+  labels:
+    app: flow-repository
+    chart: {{ .Chart.Name }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+{{- toYaml .Values.customLabels | nindent 4 }}
+spec:
+  strategy:
+    type: Recreate
+  replicas: {{ .Values.repository.replicas }}
+  selector:
+    matchLabels:
+      app: flow-repository
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: flow-repository
+        release: {{ .Release.Name }}
+{{- toYaml .Values.customLabels | nindent 8 }}
+    spec:
+{{- with .Values.repository.affinity }}
+      affinity:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- with  .Values.repository.tolerations }}
+      tolerations:
+            {{ toYaml . | nindent 8 }}
+{{- end }}
+{{- if .Values.repository.nodeSelector }}
+      nodeSelector:
+            {{ toYaml .Values.repository.nodeSelector | nindent 8 }}
+{{ else }}
+      nodeSelector:
+        {{ include "os.label" . }}: linux
+{{- end }}
+      serviceAccountName: {{ template "cloudbees-flow.serviceAccountName" . }}
+{{- if eq .Values.securityContext.enabled true }}
+      securityContext:
+{{- omit .Values.securityContext "enabled" | toYaml | nindent 8 }}
+{{- end}}
+{{- if and .Values.volumePermissions.enabled .Values.repository.volumesPermissionsInitContainer.enabled }}
+      initContainers:
+        - name: volumes-permissions
+{{ if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.repository.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.repository.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+          - name: repository-data-volume
+            mountPath: /repository-data
+{{- if .Values.repository.additionalVolumeMounts }}
+{{- toYaml .Values.repository.additionalVolumeMounts | nindent 10 }}
+{{- end }}
+          command:
+          - sh
+          - -c
+          - |
+            set -e
+            set -x
+            chown -R {{ .Values.securityContext.runAsUser }}:{{ .Values.securityContext.fsGroup }} /repository-data
+{{- if and .Values.repository.additionalVolumes .Values.repository.additionalVolumeMounts -}}
+{{- include  "validate.additionalVolumes-and-additionalVolumeMounts" .Values.repository -}}
+{{- range $key, $value := .Values.repository.additionalVolumeMounts }}
+            chown -R {{ $.Values.securityContext.runAsUser }}:{{ $.Values.securityContext.fsGroup }} {{ $value.mountPath }} | true
+{{- end }}
+{{ end }}
+          resources:
+            limits:
+              cpu: "25m"
+              memory: "128Mi"
+            requests:
+              cpu: "25m"
+              memory: "128Mi"
+{{- end }}
+      containers:
+        - name: flow-repository
+{{ if .Values.global.cloudbees.imageRegistry }}
+          image: "{{ .Values.global.cloudbees.imageRegistry }}/{{ .Values.repository.imageRepository }}:{{- if .Values.global.cloudbees.imageTag }}{{ .Values.global.cloudbees.imageTag }}{{ else }}{{ .Values.images.tag }}{{- end }}"
+{{ else }}
+          image: "{{- if .Values.images.registry }}{{ .Values.images.registry }}/{{- end }}{{ .Values.repository.imageRepository }}:{{ .Values.images.tag }}"
+{{- end }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+          - name: CBF_REPOSITORY_NAME
+            value: "default"
+          - name: PUBLIC_HOSTNAME
+{{- if .Values.server.enabled }}
+{{- if eq .Values.serverName "flow-server" }}
+            value: {{ .Values.repository.serviceEndpoint | default "flow-repository" | quote }}
+{{- else }}
+            value: {{ .Values.serverName | quote }}
+{{- end }}
+{{- else }}
+            value: {{ required ".repository.serviceEndpoint is required for Flow repository server deployment without a Flow server" (tpl .Values.repository.serviceEndpoint .) | quote }}
+{{- end }}
+{{- if .Values.serverName }}
+          - name: CBF_SERVER_HOST
+            value: {{ .Values.serverName | quote }}
+          - name: CBF_SERVER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+{{- if .Values.flowCredentials.existingSecret }}
+                name: {{ .Values.flowCredentials.existingSecret }}
+{{- else }}
+                name: {{ template "cloudbees-flow.fullname" . }}-credentials
+{{- end }}
+                key: CBF_SERVER_ADMIN_PASSWORD
+          - name: CBF_SERVER_USER
+            value: admin
+{{- end }}
+          - name: CBF_LOCAL_RESOURCE_HOST
+            value: cb-flow-bound-agent
+{{- if .Values.repository.zoneName }}
+          - name: CBF_ZONE_NAME
+            value: {{ .Values.repository.zoneName | quote }}
+{{- end }}
+          - name: CBF_CONFIGURE
+            value: {{ .Values.repository.ecconfigure }}
+{{- if .Values.repository.extraEnvs }}
+{{ toYaml .Values.repository.extraEnvs | indent 10 }}
+{{- end }}
+          ports:
+          - containerPort: 8200
+            name: p3-repository
+            protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8200
+            initialDelaySeconds: {{ .Values.repository.readinessProbe.initialDelaySeconds | default 120 }}
+            periodSeconds: {{ .Values.repository.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.repository.readinessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.repository.readinessProbe.failureThreshold | default 3 }}
+
+          livenessProbe:
+            exec:
+              command: ["/opt/cbflow/health-check"]
+            initialDelaySeconds: {{ .Values.repository.livenessProbe.initialDelaySeconds | default 120 }}
+            periodSeconds: {{ .Values.repository.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.repository.livenessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.repository.livenessProbe.failureThreshold | default 3 }}
+
+{{- if eq .Values.securityContext.enabled true }}
+          securityContext:
+{{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- end }}
+          resources:
+{{ toYaml .Values.repository.resources | indent 12 }}
+          volumeMounts:
+          - name: repository-data-volume
+            mountPath: /repository-data
+          - name: logback-config
+            mountPath: /custom-config/repository/logging-local.properties
+            subPath: repository-logback-config
+  {{- if .Values.repository.additionalVolumeMounts }}
+  {{- toYaml .Values.repository.additionalVolumeMounts | nindent 10 }}
+  {{- end }}
+{{- if .Values.repository.additionalContainers }}
+{{ toYaml .Values.repository.additionalContainers | indent 8 }}
+{{- end }}
+      volumes:
+      - name: repository-data-volume
+        persistentVolumeClaim:
+           claimName: {{ .Values.storage.volumes.repositoryStorage.name }}
+      - name: logback-config
+        configMap:
+          name: flow-logging-config
+{{- if .Values.repository.additionalVolumes }}
+{{- toYaml .Values.repository.additionalVolumes | nindent 6}}
+{{- end }}
+{{- end }}
