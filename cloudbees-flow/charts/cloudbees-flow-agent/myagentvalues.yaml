@@ -191,8 +191,7 @@ flowCredentials:
   serverSecretReference: false
   ## `flowCredentials.user: admin` is used by default, you can specify a different user if desired.
   ## IMPORTANT: The `flowCredentials.user` must have `modify` permissions for `resources` on the flow-server.
-  user: admin
-  password: DiykbKtdGTLBBeXdslFt
+
 
 ### --------------------------------------------
 ### Pods security context
