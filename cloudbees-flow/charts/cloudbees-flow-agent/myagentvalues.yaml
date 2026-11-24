@@ -190,9 +190,7 @@ flowCredentials:
   ## `serverSecretReference` is added to support case where agents need to refer  flow servers existing admin credentials
   serverSecretReference: false
   ## `flowCredentials.user: admin` is used by default, you can specify a different user if desired.
-  ## IMPORTANT: The `flowCredentials.user` must have `modify` permissions for `resources` on the flow-server.
-  user: admin
-  password: DiykbKtdGTLBBeXdslFt
+  ## IMPORTANT: The `flowCredentials.user` must have `modify` permissions for `resources` on the flow-server
 
 ### --------------------------------------------
 ### Pods security context
